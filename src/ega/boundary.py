@@ -54,4 +54,7 @@ def execution_attestation(prepared: PreparedAuthority, result: dict[str, Any], e
         reason=result["reason"],
         commit="ATTEMPTED" if result["decision"] == "COMMIT" else "NOT_ATTEMPTED",
         effect=result["effect"],
+        ao_ref=prepared.authority.ao_ref,
+        aee_ref=prepared.authority.aee_ref,
+        ect_ref=prepared.authority.ect_ref,
     )
