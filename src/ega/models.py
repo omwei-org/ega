@@ -33,3 +33,17 @@ class ExecutionAuthority:
     governance_context: dict[str, Any] = field(default_factory=dict)
     evidence: dict[str, Any] = field(default_factory=dict)
     status: str = "VALID"
+
+
+@dataclass(frozen=True)
+class ExecutionAttestation:
+    """Evidence record binding an execution decision to its authority and context."""
+    execution_id: str
+    authority_id: str
+    authority_digest: str
+    prepared_context_epoch: int
+    current_context_epoch: int
+    decision: str
+    reason: str
+    commit: str
+    effect: str
