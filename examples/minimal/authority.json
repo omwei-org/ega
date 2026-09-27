@@ -1,0 +1,15 @@
+{
+  "authority_id": "ega-authority-001",
+  "principal": "agent-123",
+  "action": "open",
+  "target": "valve-v1",
+  "scope": {
+    "value": {
+      "min": "0%",
+      "max": "20%"
+    },
+    "environment": "plant-7"
+  },
+  "source_decision": "raig-decision-784",
+  "status": "VALID"
+}
