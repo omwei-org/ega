@@ -36,3 +36,12 @@ def test_execution_attestation_binds_blocked_attempt():
     assert eatt.reason == "STALE_CONTEXT"
     assert eatt.commit == "NOT_ATTEMPTED"
     assert eatt.effect == "NONE"
+
+
+def test_execution_attestation_preserves_eabc_lineage():
+    base = authority()
+    authority_with_lineage = type(base)(**{**base.__dict__, "ao_ref": "ao-001", "aee_ref": "aee-001", "ect_ref": "ect-001"})
+    prepared = prepare(authority_with_lineage, context_epoch=1)
+    result = commit(prepared, current_epoch=2)
+    eatt = execution_attestation(prepared, result, execution_id="exec-002", current_epoch=2)
+    assert (eatt.ao_ref, eatt.aee_ref, eatt.ect_ref) == ("ao-001", "aee-001", "ect-001")
