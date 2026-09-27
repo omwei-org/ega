@@ -1,33 +1,40 @@
-from ega.authority import issue_authority
-from ega.models import RuntimeIntent
+import pytest
+from ega.authority import AuthorizationError, issue_authority
+from ega.models import AuthorizationScope, RuntimeIntent
 
-def test_issue_authority():
-    intent = RuntimeIntent(
-        principal="agent-123",
-        action="open",
-        target="valve-v1",
-        parameters={"value": "20%"},
-        environment="plant-7",
-        decision_ref="raig-decision-784",
-    )
-    authority = issue_authority(intent)
+def make_intent(**overrides):
+    values = dict(principal="agent-123", action="open", target="valve-v1", parameters={"value": 20}, environment="plant-7", decision_ref="raig-decision-784", governance_context={"policy_refs": ["policy:process-v3"]}, evidence={"provenance": "raig-system-1"})
+    values.update(overrides)
+    return RuntimeIntent(**values)
 
+def make_scope(**overrides):
+    values = dict(principal="agent-123", action="open", target="valve-v1", environment="plant-7", parameter_constraints={"value": {"min": 0, "max": 20}})
+    values.update(overrides)
+    return AuthorizationScope(**values)
+
+def test_issue_authority_within_scope():
+    authority = issue_authority(make_intent(), make_scope())
     assert authority.status == "VALID"
     assert authority.principal == "agent-123"
     assert authority.target == "valve-v1"
-    assert authority.parameters["value"] == "20%"
+    assert authority.parameters["value"] == 20
     assert authority.source_decision == "raig-decision-784"
+    assert authority.governance_context["policy_refs"] == ["policy:process-v3"]
+    assert authority.evidence["provenance"] == "raig-system-1"
+
+def test_out_of_scope_intent_fails_closed():
+    with pytest.raises(AuthorizationError):
+        issue_authority(make_intent(parameters={"value": 21}), make_scope())
+
+def test_missing_required_input_fails_closed():
+    with pytest.raises(ValueError):
+        issue_authority(make_intent(target=""), make_scope())
 
 def test_authority_does_not_execute():
-    intent = RuntimeIntent(
-        principal="agent-123",
-        action="open",
-        target="valve-v1",
-        parameters={"value": "20%"},
-        environment="plant-7",
-        decision_ref="raig-decision-784",
-    )
-    authority = issue_authority(intent)
-    assert authority.status == "VALID"
+    authority = issue_authority(make_intent(), make_scope())
     assert not hasattr(authority, "execute")
     assert not hasattr(authority, "commit")
+
+def test_deterministic_issuance():
+    intent, scope = make_intent(), make_scope()
+    assert issue_authority(intent, scope) == issue_authority(intent, scope)
