@@ -78,9 +78,16 @@ pytest -q
 
 The implementation intentionally stops at authority issuance. It does not execute or commit actions.
 
+## Examples
+
+- [Minimal EGA → EABC flow](examples/minimal/README.md)
+- [Human boundary / substituted execution path](examples/jozsef-human-boundary/README.md)
+
+The second example models a provider-neutral runtime-control failure: a human restriction permits only execution path A, path A becomes unavailable, and a technically available substitute path B must not acquire execution authority merely because the system can execute it.
+
 ## Repository status
 
-The reference architecture and initial RAIG → EGA interface are defined. The implementation now includes a minimal executable contract for runtime intent, external authorization scope, fail-closed evaluation, and execution-authority issuance.
+The reference architecture and initial RAIG → EGA interface are defined. The implementation includes a minimal executable contract for runtime intent, external authorization scope, fail-closed evaluation, execution-authority issuance, and a prepare/final-check/commit seam.
 
 See:
 
