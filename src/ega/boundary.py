@@ -1,0 +1,36 @@
+from dataclasses import dataclass
+from hashlib import sha256
+import json
+from typing import Any
+from .models import ExecutionAuthority
+
+@dataclass(frozen=True)
+class PreparedAuthority:
+    authority: ExecutionAuthority
+    context_epoch: int
+    authority_digest: str
+
+def _digest(authority: ExecutionAuthority) -> str:
+    payload = {"authority_id": authority.authority_id, "principal": authority.principal, "action": authority.action, "target": authority.target, "parameters": authority.parameters, "environment": authority.environment, "source_decision": authority.source_decision, "status": authority.status}
+    return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+def prepare(authority: ExecutionAuthority, context_epoch: int) -> PreparedAuthority:
+    """Capture authority and execution-context snapshot before commit."""
+    if authority.status != "VALID":
+        raise ValueError("only VALID execution authority may be prepared")
+    return PreparedAuthority(authority, context_epoch, _digest(authority))
+
+def final_authority_check(prepared: PreparedAuthority, current_epoch: int, current_authority: ExecutionAuthority | None = None) -> str:
+    """Re-check authority/context immediately before commit."""
+    if current_epoch != prepared.context_epoch:
+        return "STALE_CONTEXT"
+    if current_authority is not None and _digest(current_authority) != prepared.authority_digest:
+        return "AUTHORITY_DIGEST_MISMATCH"
+    return "VALID"
+
+def commit(prepared: PreparedAuthority, current_epoch: int, current_authority: ExecutionAuthority | None = None) -> dict[str, Any]:
+    """Return a commit decision; this seam performs no external effect."""
+    reason = final_authority_check(prepared, current_epoch, current_authority)
+    if reason != "VALID":
+        return {"decision": "BLOCK", "reason": reason, "applied": False}
+    return {"decision": "COMMIT", "reason": "VALID", "applied": True}
