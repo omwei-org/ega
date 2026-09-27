@@ -50,3 +50,6 @@ class ExecutionAttestation:
     reason: str
     commit: str
     effect: str
+    ao_ref: str | None = None
+    aee_ref: str | None = None
+    ect_ref: str | None = None
