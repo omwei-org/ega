@@ -34,3 +34,24 @@ def commit(prepared: PreparedAuthority, current_epoch: int, current_authority: E
     if reason != "VALID":
         return {"decision": "BLOCK", "reason": reason, "applied": False, "effect": "NONE"}
     return {"decision": "COMMIT", "reason": "VALID", "applied": True, "effect": "NOT_EXECUTED"}
+
+
+def execution_attestation(prepared: PreparedAuthority, result: dict[str, Any], execution_id: str, current_epoch: int) -> ExecutionAttestation:
+    """Create an EAtt/failure record from a boundary decision.
+
+    This records evidence only; it does not attest to tamper resistance or
+    independently prove that an external effect occurred.
+    """
+    if not execution_id:
+        raise ValueError("execution_id is required")
+    return ExecutionAttestation(
+        execution_id=execution_id,
+        authority_id=prepared.authority.authority_id,
+        authority_digest=prepared.authority_digest,
+        prepared_context_epoch=prepared.context_epoch,
+        current_context_epoch=current_epoch,
+        decision=result["decision"],
+        reason=result["reason"],
+        commit="ATTEMPTED" if result["decision"] == "COMMIT" else "NOT_ATTEMPTED",
+        effect=result["effect"],
+    )
