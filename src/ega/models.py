@@ -33,6 +33,9 @@ class ExecutionAuthority:
     governance_context: dict[str, Any] = field(default_factory=dict)
     evidence: dict[str, Any] = field(default_factory=dict)
     status: str = "VALID"
+    ao_ref: str | None = None
+    aee_ref: str | None = None
+    ect_ref: str | None = None
 
 
 @dataclass(frozen=True)
