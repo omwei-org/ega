@@ -1,6 +1,6 @@
 """EGA reference implementation."""
 
-from .models import RuntimeIntent, ExecutionAuthority
-from .authority import issue_authority
+from .models import AuthorizationScope, ExecutionAuthority, RuntimeIntent
+from .authority import AuthorizationError, issue_authority
 
-__all__ = ["RuntimeIntent", "ExecutionAuthority", "issue_authority"]
+__all__ = ["AuthorizationError", "AuthorizationScope", "ExecutionAuthority", "RuntimeIntent", "issue_authority"]
