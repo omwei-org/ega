@@ -67,15 +67,27 @@ EGA provides one concrete architecture for the upstream authorization-to-executi
 Runtime AI Governance → EGA → EABC → Enforcement Boundary → EFFECT
 ```
 
+## Reference implementation
+
+The repository contains a minimal deterministic Python implementation.
+
+```bash
+python -m pip install -e .
+pytest -q
+```
+
+The implementation intentionally stops at authority issuance. It does not execute or commit actions.
+
 ## Repository status
 
-This repository defines the reference architecture and interfaces first. The reference implementation will follow the frozen interfaces and executable examples.
+The reference architecture and initial RAIG → EGA interface are defined. The reference implementation is intentionally minimal and will evolve as the interfaces are frozen and validated through executable examples.
 
 See:
 
 - [Reference Architecture](docs/reference-architecture.md)
 - [RAIG → EGA Interface](docs/raig-interface.md)
 - [Execution Authority](docs/execution-authority.md)
+- [Minimal Example](examples/minimal/README.md)
 
 ## Related work
 
