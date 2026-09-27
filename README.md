@@ -76,7 +76,7 @@ python -m pip install -e ".[test]"
 pytest -q
 ```
 
-The implementation intentionally stops at authority issuance. It does not execute or commit actions.
+The implementation does not execute external actions. It includes a semantic PREPARE / FINAL_AUTHORITY_CHECK / COMMIT seam and emits `ExecutionAttestation` evidence for the resulting commit or block decision.
 
 ## Examples
 
