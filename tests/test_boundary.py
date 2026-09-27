@@ -22,3 +22,17 @@ def test_authority_change_blocks_commit():
     prepared = prepare(original, context_epoch=1)
     changed = type(original)(**{**original.__dict__, "parameters": {"value": 19}})
     assert final_authority_check(prepared, current_epoch=1, current_authority=changed) == "AUTHORITY_DIGEST_MISMATCH"
+
+
+def test_execution_attestation_binds_blocked_attempt():
+    prepared = prepare(authority(), context_epoch=1)
+    result = commit(prepared, current_epoch=2)
+    eatt = execution_attestation(prepared, result, execution_id="exec-001", current_epoch=2)
+    assert eatt.authority_id == prepared.authority.authority_id
+    assert eatt.authority_digest == prepared.authority_digest
+    assert eatt.prepared_context_epoch == 1
+    assert eatt.current_context_epoch == 2
+    assert eatt.decision == "BLOCK"
+    assert eatt.reason == "STALE_CONTEXT"
+    assert eatt.commit == "NOT_ATTEMPTED"
+    assert eatt.effect == "NONE"
