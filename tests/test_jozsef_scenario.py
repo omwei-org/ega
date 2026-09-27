@@ -46,7 +46,7 @@ def test_substituted_path_is_outside_execution_authority():
         "decision": "COMMIT",
         "reason": "VALID",
         "applied": True,
-    "effect": "NOT_EXECUTED",
+        "effect": "NOT_EXECUTED",
     }
 
 
@@ -79,5 +79,5 @@ def test_path_a_unavailable_does_not_authorize_path_b():
         "decision": "BLOCK",
         "reason": "STALE_CONTEXT",
         "applied": False,
-    "effect": "NONE",
+        "effect": "NONE",
     }
