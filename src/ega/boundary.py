@@ -29,8 +29,8 @@ def final_authority_check(prepared: PreparedAuthority, current_epoch: int, curre
     return "VALID"
 
 def commit(prepared: PreparedAuthority, current_epoch: int, current_authority: ExecutionAuthority | None = None) -> dict[str, Any]:
-    """Return a commit decision; this seam performs no external effect."""
+    """Return a commit decision; this seam performs no external effect.\n\n`applied` means the commit decision was accepted by this reference gate;\n`effect` records whether an external effect was actually performed. This\nreference implementation never performs the external effect itself.\n"""
     reason = final_authority_check(prepared, current_epoch, current_authority)
     if reason != "VALID":
-        return {"decision": "BLOCK", "reason": reason, "applied": False}
-    return {"decision": "COMMIT", "reason": "VALID", "applied": True}
+        return {"decision": "BLOCK", "reason": reason, "applied": False, "effect": "NONE"}
+    return {"decision": "COMMIT", "reason": "VALID", "applied": True, "effect": "NOT_EXECUTED"}
