@@ -1,3 +1,5 @@
+import pytest
+
 from ega.authority import AuthorizationError, issue_authority
 from ega.boundary import commit, final_authority_check, prepare
 from ega.models import AuthorizationScope, RuntimeIntent
@@ -34,13 +36,11 @@ def test_substituted_path_is_outside_execution_authority():
         decision_ref="human-constraint-001",
     )
 
-    try:
+    with pytest.raises(AuthorizationError):
         issue_authority(substitute, scope, authority_id="authority-b")
-    except AuthorizationError:
-        pass
-    else:
-        raise AssertionError("substitute path must not receive execution authority")
 
+    assert prepared.authority.source_decision == "human-constraint-001"
+    assert prepared.authority.governance_context["instruction"] == "A-only; stop if unavailable"
     assert final_authority_check(prepared, current_epoch=1) == "VALID"
     assert commit(prepared, current_epoch=1) == {
         "decision": "COMMIT",
@@ -71,8 +71,10 @@ def test_path_a_unavailable_does_not_authorize_path_b():
 
     # The relevant runtime condition changed after PREPARE. A technically
     # available substitute path is not represented by the prepared authority.
+    result = commit(prepared, current_epoch=2)
+
     assert final_authority_check(prepared, current_epoch=2) == "STALE_CONTEXT"
-    assert commit(prepared, current_epoch=2) == {
+    assert result == {
         "decision": "BLOCK",
         "reason": "STALE_CONTEXT",
         "applied": False,
