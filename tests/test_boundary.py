@@ -10,12 +10,12 @@ def authority():
 def test_prepare_then_commit():
     prepared = prepare(authority(), context_epoch=1)
     assert final_authority_check(prepared, current_epoch=1) == "VALID"
-    assert commit(prepared, current_epoch=1) == {"decision": "COMMIT", "reason": "VALID", "applied": True}
+    assert commit(prepared, current_epoch=1) == {"decision": "COMMIT", "reason": "VALID", "applied": True, "effect": "NOT_EXECUTED"}
 
 def test_epoch_change_blocks_commit():
     prepared = prepare(authority(), context_epoch=1)
     assert final_authority_check(prepared, current_epoch=2) == "STALE_CONTEXT"
-    assert commit(prepared, current_epoch=2) == {"decision": "BLOCK", "reason": "STALE_CONTEXT", "applied": False}
+    assert commit(prepared, current_epoch=2) == {"decision": "BLOCK", "reason": "STALE_CONTEXT", "applied": False, "effect": "NONE"}
 
 def test_authority_change_blocks_commit():
     original = authority()
