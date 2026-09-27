@@ -72,7 +72,7 @@ Runtime AI Governance → EGA → EABC → Enforcement Boundary → EFFECT
 The repository contains a minimal deterministic Python implementation.
 
 ```bash
-python -m pip install -e .
+python -m pip install -e ".[test]"
 pytest -q
 ```
 
@@ -80,7 +80,7 @@ The implementation intentionally stops at authority issuance. It does not execut
 
 ## Repository status
 
-The reference architecture and initial RAIG → EGA interface are defined. The reference implementation is intentionally minimal and will evolve as the interfaces are frozen and validated through executable examples.
+The reference architecture and initial RAIG → EGA interface are defined. The implementation now includes a minimal executable contract for runtime intent, external authorization scope, fail-closed evaluation, and execution-authority issuance.
 
 See:
 
