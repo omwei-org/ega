@@ -65,10 +65,10 @@ The current Python implementation is a **semantic reference implementation** of 
 | PREPARE | `prepare()` |
 | FINAL_AUTHORITY_CHECK | `final_authority_check()` |
 | COMMIT Gate decision | `commit()` |
-| EAtt / failure evidence | documented by the examples/profile mapping; not yet emitted as a dedicated implementation type |
+| EAtt / failure evidence | `ExecutionAttestation` emitted by `execution_attestation()` |
 
 This flattening is deliberate at the current reference stage. The semantic obligations are tested before introducing additional artifact types or a wire format.
 
 In particular, `commit()` returns a decision only. It does **not** perform the external effect and therefore does not claim enforcement-boundary non-bypass, hardware-backed integrity, or tamper-resistant attestation.
 
-The next implementation step, if required, is to make the AO/AEE/ECT and EAtt representations explicit while preserving the existing boundary semantics.
+AO/AEE/ECT lineage is now preserved on `ExecutionAuthority` and carried into `ExecutionAttestation` through `ao_ref`, `aee_ref`, and `ect_ref`. The EAtt remains an evidence record: it does not attest to tamper resistance, independently prove an external effect, or replace a separate provenance/verification evidence bundle.
