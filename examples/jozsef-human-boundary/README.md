@@ -60,4 +60,18 @@ A conforming implementation should be able to correlate at least:
 - the commit result;
 - the absence or presence of an externally observable effect.
 
-This example does not implement an external effect. The boundary seam remains responsible for the commit decision; the downstream enforcement implementation is deployment-specific.
+In the reference implementation, `commit()` returns the boundary decision but deliberately does not perform an external effect. A downstream enforcement implementation is deployment-specific.
+
+## What this example demonstrates
+
+This example is a **semantic correspondence test**, not a claim that the Python process itself is a tamper-resistant enforcement boundary.
+
+It demonstrates:
+
+1. a human constraint can be represented as governance context;
+2. EGA can issue authority limited to the declared execution path;
+3. a technically available substitute does not acquire authority through capability alone;
+4. a runtime context change invalidates a prepared authority;
+5. the resulting decision is BLOCK with no commit attempted.
+
+The example does not claim that an agent is physically prevented from reaching path B by this Python reference implementation. That property belongs to the downstream enforcement boundary and, where required, its conformance assessment.
