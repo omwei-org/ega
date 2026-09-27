@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 from typing import Any
-from .models import ExecutionAuthority
+from .models import ExecutionAuthority, ExecutionAttestation
 
 @dataclass(frozen=True)
 class PreparedAuthority:
