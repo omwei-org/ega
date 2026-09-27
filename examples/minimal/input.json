@@ -1,0 +1,25 @@
+{
+  "principal": {
+    "id": "agent-123",
+    "type": "ai-agent"
+  },
+  "intent": {
+    "action": "open",
+    "target": "valve-v1",
+    "parameters": {
+      "value": "20%"
+    }
+  },
+  "governance_context": {
+    "decision_ref": "raig-decision-784",
+    "policy_refs": [
+      "policy:process-v3"
+    ]
+  },
+  "runtime_context": {
+    "environment": "plant-7"
+  },
+  "evidence": {
+    "provenance": "raig-system-1"
+  }
+}
