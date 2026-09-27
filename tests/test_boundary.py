@@ -1,5 +1,5 @@
 from ega.authority import issue_authority
-from ega.boundary import commit, final_authority_check, prepare
+from ega.boundary import commit, execution_attestation, final_authority_check, prepare
 from ega.models import AuthorizationScope, RuntimeIntent
 
 def authority():
