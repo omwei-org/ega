@@ -64,6 +64,8 @@ class ExecutionAuthority:
     ao_ref: str | None = None
     aee_ref: str | None = None
     ect_ref: str | None = None
+    decision_record_ref: str | None = None
+    decision_record_digest: str | None = None
 
 @dataclass(frozen=True)
 class ExecutionAttestation:
