@@ -71,4 +71,6 @@ This is selective lineage, not propagation of the full RAIG evidence population 
 
 Where a conforming implementation provides integrity protection, the Decision Record reference, digest, and selected evidence references must be protected as part of the EAtt correlation. External unprotected mappings must not be required to reconstruct the lineage.
 
+The evidence-bundle correlation references are similarly opaque handles in the reference implementation. A reference value such as `commit_ref` or `outcome_ref` does not by itself establish that the referenced event or record exists, is authentic, or is bound to the execution. Those properties require the referenced evidence and an independently verifiable integrity/binding mechanism. The bundle manifest digest provides deterministic content addressing for the manifest; it is not, by itself, an authenticity or tamper-resistance guarantee.
+
 The current Python implementation is semantic/reference code and does not provide tamper-resistant attestation or independent proof of external effects.
