@@ -3,6 +3,7 @@ from hashlib import sha256
 import json
 from typing import Any
 from .models import ExecutionAuthority, ExecutionAttestation, DecisionRecord
+from .evidence import decision_record_digest
 
 @dataclass(frozen=True)
 class PreparedAuthority:
@@ -37,28 +38,6 @@ def commit(prepared: PreparedAuthority, current_epoch: int, current_authority: E
 
 
 
-def _decision_record_digest(record: DecisionRecord) -> str:
-    payload = {
-        "decision_id": record.decision_id,
-        "decision_time": record.decision_time,
-        "intent_ref": record.intent_ref,
-        "authorization_scope_ref": record.authorization_scope_ref,
-        "evidence_items": [
-            {
-                "evidence_ref": item.evidence_ref,
-                "digest": item.digest,
-                "observed_at": item.observed_at,
-                "evaluation_status": item.evaluation_status,
-                "role": item.role,
-                "source_confidence": item.source_confidence,
-            }
-            for item in record.evidence_items
-        ],
-    }
-    return sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
-
 def execution_attestation(
     prepared: PreparedAuthority,
     result: dict[str, Any],
@@ -89,6 +68,6 @@ def execution_attestation(
         aee_ref=prepared.authority.aee_ref,
         ect_ref=prepared.authority.ect_ref,
         decision_record_ref=decision_record.decision_id if decision_record else None,
-        decision_record_digest=_decision_record_digest(decision_record) if decision_record else None,
+        decision_record_digest=decision_record_digest(decision_record) if decision_record else None,
         selected_evidence_refs=tuple(selected_evidence_refs),
     )
