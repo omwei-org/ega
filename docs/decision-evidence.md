@@ -55,7 +55,7 @@ FINAL_AUTHORITY_CHECK
       EAtt
 ```
 
-The Decision Record explains why authority was issued.
+The Decision Record explains why authority was issued. `issue_authority()` may now accept the record explicitly; the resulting `ExecutionAuthority` carries its identifier and deterministic digest, preserving the lineage into the downstream boundary.
 
 AEE contains only conditions that must remain true at commit. Evidence freshness becomes a commit-time concern only when the resulting freshness/validity requirement is explicitly represented as an AEE condition.
 
