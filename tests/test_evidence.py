@@ -157,14 +157,14 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
         prepared,
         result,
         execution_id="exec-e2e-001",
-        current_epoch=42,
+        current_epoch=41,
         decision_record=record,
         selected_evidence_refs=("e1-human-constraint",),
     )
 
     assert result == {
         "decision": "BLOCK",
-        "reason": "STALE_CONTEXT",
+        "reason": "AEE_CONDITION_FAILED",
         "applied": False,
         "effect": "NONE",
     }
