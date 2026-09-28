@@ -37,7 +37,60 @@ Illustrative input:
 
 This is governance input and runtime evidence. It is **not execution authority**.
 
-## 2. EGA evaluates against provisioning-time authorization
+## 2. DecisionRecord and AEE-condition projection
+
+EGA preserves the evidence population considered for the authorization decision in an EGA-side `DecisionRecord`. The `DecisionRecord` is **not an EABC primitive** and does not mean that every upstream evidence item becomes a commit-time condition.
+
+For example, the decision may consider:
+
+```text
+e-issuance
+  evaluation_status = USED
+  role              = issuance_basis
+  digest            = sha256:issuance
+
+e-observation
+  evaluation_status = EVALUATED_NOT_USED
+  role              = runtime_observation
+  digest            = sha256:observation
+```
+
+The resulting authority retains the DecisionRecord reference and digest, but:
+
+```text
+aee_conditions = ()
+aee_condition_digests = {}
+```
+
+Neither the issuance basis nor the evaluated-but-unused observation is automatically promoted to an AEE condition.
+
+If EGA explicitly determines that a fact must remain true at commit time, it can project that fact into the minimal AEE-condition seam:
+
+```text
+e-freshness
+  evaluation_status = USED
+  role              = commit_condition
+  digest            = sha256:freshness
+
+→ aee_conditions = ("e-freshness",)
+→ aee_condition_digests = {
+     "e-freshness": "sha256:freshness"
+  }
+```
+
+The distinction is therefore:
+
+| EGA-side record | Commit semantics |
+|---|---|
+| `DecisionRecord` | preserves the full evidence population considered by EGA |
+| `USED / issuance_basis` | explains issuance; not automatically a commit condition |
+| `EVALUATED_NOT_USED` | remains decision evidence; not a commit condition |
+| `USED / commit_condition` | explicitly projected into the AEE condition seam |
+| `FINAL_AUTHORITY_CHECK` | checks the declared AEE conditions and current context; it does not interpret why RAIG evidence was considered |
+
+This is a reference-implementation seam, not a complete AEE or evidence engine. In particular, freshness affects commit only when it is explicitly represented as a condition that must remain true at the execution boundary.
+
+## 3. EGA evaluates against provisioning-time authorization
 
 The applicable authorization scope is provisioned independently:
 
@@ -79,26 +132,26 @@ ECT
 
 Together, AO + AEE + ECT realize the portable authorization artifact described by the EGA/SIF profile.
 
-## 3. PREPARE
+## 4. PREPARE
 
 The enforcement boundary receives the ECT and prepares the execution attempt against the current execution context.
 
 At this point:
 
-```
+```text
 ECT.path = A
 context_epoch = 41
 ```
 
 The agent may still have technical capability to reach another path. That capability does not modify the ECT or extend its authority.
 
-## 4. Runtime change before COMMIT
+## 5. Runtime change before COMMIT
 
 Before commit, path A becomes unavailable.
 
 The runtime execution context advances:
 
-```
+```text
 context_epoch: 41 → 42
 ```
 
@@ -106,23 +159,23 @@ Path B may be technically available.
 
 That does **not** transform:
 
-```
+```text
 ECT(path A)
 ```
 
 into:
 
-```
+```text
 ECT(path B)
 ```
 
 The prepared authority is now stale relative to the execution context.
 
-## 5. FINAL_AUTHORITY_CHECK
+## 6. FINAL_AUTHORITY_CHECK
 
 The execution boundary re-evaluates the prepared authority against current conditions.
 
-```
+```text
 prepared_epoch = 41
 current_epoch  = 42
 
@@ -132,18 +185,18 @@ current_epoch  = 42
 
 Therefore:
 
-```
+```text
 COMMIT NOT ATTEMPTED
 EFFECT = NONE
 ```
 
 The substitute path is not executed merely because it is technically available.
 
-## 6. EAtt
+## 7. EAtt
 
 For a blocked attempt, the public EGA/SIF profile requires failure to remain distinguishable from successful execution. A deployment-specific EAtt/failure record can preserve:
 
-```
+```text
 execution_id
 ECT reference
 AO / AEE correlation
@@ -157,12 +210,14 @@ effect = NONE
 
 For a successful execution, EAtt instead binds the ECT, commit event, and execution outcome.
 
-## 7. What this demonstrates
+## 8. What this demonstrates
 
 The end-to-end evidence chain becomes:
 
 ```
 RAIG evidence
+    ↓
+DecisionRecord
     ↓
 AO
     ↓
