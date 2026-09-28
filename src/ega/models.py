@@ -66,6 +66,7 @@ class ExecutionAuthority:
     ect_ref: str | None = None
     decision_record_ref: str | None = None
     decision_record_digest: str | None = None
+    aee_conditions: tuple[str, ...] = field(default_factory=tuple)
 
 @dataclass(frozen=True)
 class ExecutionAttestation:
