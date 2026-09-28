@@ -76,9 +76,29 @@ def execution_attestation(
     """
     if not execution_id:
         raise ValueError("execution_id is required")
+
+    authority = prepared.authority
+    if decision_record is not None:
+        record_digest = decision_record_digest(decision_record)
+        if authority.decision_record_ref != decision_record.decision_id:
+            raise ValueError("decision record does not match prepared authority")
+        if authority.decision_record_digest != record_digest:
+            raise ValueError("decision record digest does not match prepared authority")
+        known_evidence_refs = {item.evidence_ref for item in decision_record.evidence_items}
+        unknown_refs = set(selected_evidence_refs) - known_evidence_refs
+        if unknown_refs:
+            raise ValueError("selected evidence reference is not present in decision record")
+        decision_record_ref = decision_record.decision_id
+        decision_record_digest_value = record_digest
+    else:
+        if selected_evidence_refs:
+            raise ValueError("selected evidence references require a decision record")
+        decision_record_ref = authority.decision_record_ref
+        decision_record_digest_value = authority.decision_record_digest
+
     return ExecutionAttestation(
         execution_id=execution_id,
-        authority_id=prepared.authority.authority_id,
+        authority_id=authority.authority_id,
         authority_digest=prepared.authority_digest,
         prepared_context_epoch=prepared.context_epoch,
         current_context_epoch=current_epoch,
@@ -86,10 +106,10 @@ def execution_attestation(
         reason=result["reason"],
         commit="ATTEMPTED" if result["decision"] == "COMMIT" else "NOT_ATTEMPTED",
         effect=result["effect"],
-        ao_ref=prepared.authority.ao_ref,
-        aee_ref=prepared.authority.aee_ref,
-        ect_ref=prepared.authority.ect_ref,
-        decision_record_ref=decision_record.decision_id if decision_record else None,
-        decision_record_digest=decision_record_digest(decision_record) if decision_record else None,
+        ao_ref=authority.ao_ref,
+        aee_ref=authority.aee_ref,
+        ect_ref=authority.ect_ref,
+        decision_record_ref=decision_record_ref,
+        decision_record_digest=decision_record_digest_value,
         selected_evidence_refs=tuple(selected_evidence_refs),
     )
