@@ -4,7 +4,7 @@ This example models a runtime-control failure in which a human instruction restr
 
 The scenario is intentionally provider-neutral. It demonstrates the distinction between capability and execution authority.
 
-See [end-to-end.md](end-to-end.md) for the complete RAIG → EGA → AO → AEE → ECT → EABC → EAtt flow.
+See [end-to-end.md](end-to-end.md) for the complete RAIG → EGA → AO → AEE → ECT → EABC → EAtt flow, including the explicit `DecisionRecord` → AEE-condition projection boundary.
 
 ## Scenario
 
