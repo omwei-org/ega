@@ -1,9 +1,7 @@
-from dataclasses import replace
-
 from ega.authority import issue_authority
-from ega.boundary import commit, prepare
+from ega.boundary import commit, execution_attestation, prepare
 from ega.evidence import canonical_json, evidence_bundle
-from ega.models import AuthorizationScope, RuntimeIntent
+from ega.models import AuthorizationScope, DecisionRecord, EvidenceItem, RuntimeIntent
 
 
 def make_authority():
@@ -28,8 +26,6 @@ def make_authority():
 def test_evidence_bundle_is_deterministic():
     prepared = prepare(make_authority(), context_epoch=1)
     result = commit(prepared, current_epoch=1)
-    from ega.boundary import execution_attestation
-
     eatt = execution_attestation(
         prepared, result, execution_id="exec-001", current_epoch=1
     )
@@ -64,3 +60,41 @@ def test_evidence_bundle_preserves_negative_boundary_result():
     assert bundle["execution_attestation"]["reason"] == "STALE_CONTEXT"
     assert bundle["execution_attestation"]["effect"] == "NONE"
     assert bundle["references"]["commit"] is None
+
+def test_eatt_references_decision_record_and_selected_evidence():
+    prepared = prepare(make_authority(), context_epoch=1)
+    result = commit(prepared, current_epoch=2)
+    record = DecisionRecord(
+        decision_id="decision-001",
+        decision_time="2026-09-28T10:00:00Z",
+        intent_ref="intent-001",
+        authorization_scope_ref="scope-001",
+        evidence_items=(
+            EvidenceItem(
+                evidence_ref="e1-human-constraint",
+                digest="sha256:e1",
+                observed_at="2026-09-28T09:59:00Z",
+                evaluation_status="USED",
+                role="scope_constraint",
+            ),
+            EvidenceItem(
+                evidence_ref="e2-stale-observation",
+                digest="sha256:e2",
+                observed_at="2026-09-28T09:00:00Z",
+                evaluation_status="EVALUATED_NOT_USED",
+                role="runtime_observation",
+            ),
+        ),
+    )
+    eatt = execution_attestation(
+        prepared,
+        result,
+        execution_id="exec-003",
+        current_epoch=2,
+        decision_record=record,
+        selected_evidence_refs=("e1-human-constraint",),
+    )
+    assert eatt.decision_record_ref == "decision-001"
+    assert eatt.decision_record_digest
+    assert eatt.selected_evidence_refs == ("e1-human-constraint",)
+    assert eatt.reason == "STALE_CONTEXT"
