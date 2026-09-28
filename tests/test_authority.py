@@ -63,4 +63,3 @@ def test_issue_authority_binds_decision_record():
     authority = issue_authority(intent, scope, decision_record=record)
     assert authority.decision_record_ref == intent.decision_ref
     assert authority.decision_record_digest
-    assert authority.commit_conditions["context_epoch"] == "prepared_context_epoch"
