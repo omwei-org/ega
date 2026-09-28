@@ -25,8 +25,6 @@ def final_authority_check(prepared: PreparedAuthority, current_epoch: int, curre
     """Re-check authority/context immediately before commit."""
     if current_epoch != prepared.context_epoch:
         return "STALE_CONTEXT"
-    if prepared.authority.commit_conditions.get("context_epoch") == "prepared_context_epoch" and current_epoch != prepared.context_epoch:
-        return "AEE_CONDITION_FAILED"
     if current_authority is not None and _digest(current_authority) != prepared.authority_digest:
         return "AUTHORITY_DIGEST_MISMATCH"
     return "VALID"
