@@ -66,6 +66,7 @@ class ExecutionAuthority:
     ect_ref: str | None = None
     decision_record_ref: str | None = None
     decision_record_digest: str | None = None
+    commit_conditions: dict[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)
 class ExecutionAttestation:
