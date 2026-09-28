@@ -12,9 +12,27 @@ class PreparedAuthority:
     authority_digest: str
 
 def _digest(authority: ExecutionAuthority) -> str:
-    payload = {"authority_id": authority.authority_id, "principal": authority.principal, "action": authority.action, "target": authority.target, "parameters": authority.parameters, "environment": authority.environment, "source_decision": authority.source_decision, "status": authority.status}
+    """Digest all authority fields that affect authorization/commit semantics."""
+    payload = {
+        "authority_id": authority.authority_id,
+        "principal": authority.principal,
+        "action": authority.action,
+        "target": authority.target,
+        "parameters": authority.parameters,
+        "environment": authority.environment,
+        "source_decision": authority.source_decision,
+        "governance_context": authority.governance_context,
+        "evidence": authority.evidence,
+        "status": authority.status,
+        "ao_ref": authority.ao_ref,
+        "aee_ref": authority.aee_ref,
+        "ect_ref": authority.ect_ref,
+        "decision_record_ref": authority.decision_record_ref,
+        "decision_record_digest": authority.decision_record_digest,
+        "aee_conditions": authority.aee_conditions,
+        "aee_condition_digests": authority.aee_condition_digests,
+    }
     return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
 def prepare(authority: ExecutionAuthority, context_epoch: int) -> PreparedAuthority:
     """Capture authority and execution-context snapshot before commit."""
     if authority.status != "VALID":
