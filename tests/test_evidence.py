@@ -219,3 +219,92 @@ def test_unchanged_aee_condition_allows_commit():
         "applied": True,
         "effect": "NOT_EXECUTED",
     }
+
+def test_eatt_rejects_mismatched_decision_record():
+    intent = RuntimeIntent(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        parameters={"value": 20},
+        environment="plant-7",
+        decision_ref="decision-bound-001",
+    )
+    scope = AuthorizationScope(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        environment="plant-7",
+        parameter_constraints={"value": {"min": 0, "max": 20}},
+    )
+    bound_record = DecisionRecord(
+        decision_id="decision-bound-001",
+        decision_time="2026-09-28T10:00:00Z",
+        intent_ref="intent-bound-001",
+        authorization_scope_ref="scope-bound-001",
+    )
+    other_record = DecisionRecord(
+        decision_id="decision-other-001",
+        decision_time="2026-09-28T10:01:00Z",
+        intent_ref="intent-other-001",
+        authorization_scope_ref="scope-other-001",
+    )
+    authority = issue_authority(intent, scope, decision_record=bound_record)
+    prepared = prepare(authority, context_epoch=41)
+    result = commit(prepared, current_epoch=41)
+
+    import pytest
+    with pytest.raises(ValueError, match="does not match prepared authority"):
+        execution_attestation(
+            prepared,
+            result,
+            execution_id="exec-boundary-001",
+            current_epoch=41,
+            decision_record=other_record,
+        )
+
+
+def test_eatt_rejects_unlisted_selected_evidence():
+    intent = RuntimeIntent(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        parameters={"value": 20},
+        environment="plant-7",
+        decision_ref="decision-evidence-001",
+    )
+    scope = AuthorizationScope(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        environment="plant-7",
+        parameter_constraints={"value": {"min": 0, "max": 20}},
+    )
+    record = DecisionRecord(
+        decision_id="decision-evidence-001",
+        decision_time="2026-09-28T10:00:00Z",
+        intent_ref="intent-evidence-001",
+        authorization_scope_ref="scope-evidence-001",
+        evidence_items=(
+            EvidenceItem(
+                evidence_ref="e1",
+                digest="sha256:e1",
+                observed_at="2026-09-28T09:59:00Z",
+                evaluation_status="USED",
+                role="commit_condition",
+            ),
+        ),
+    )
+    authority = issue_authority(intent, scope, decision_record=record)
+    prepared = prepare(authority, context_epoch=41)
+    result = commit(prepared, current_epoch=41)
+
+    import pytest
+    with pytest.raises(ValueError, match="not present in decision record"):
+        execution_attestation(
+            prepared,
+            result,
+            execution_id="exec-evidence-001",
+            current_epoch=41,
+            decision_record=record,
+            selected_evidence_refs=("e999",),
+        )
