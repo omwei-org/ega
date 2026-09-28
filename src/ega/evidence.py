@@ -51,6 +51,19 @@ def evidence_bundle(
     This is a reference correlation container, not a signed attestation
     or proof of an external effect.
     """
+    if authority_ref != eatt.authority_id:
+        raise ValueError("authority reference does not match execution attestation")
+    if not intent_ref:
+        raise ValueError("intent_ref is required")
+    if not prepared_context_ref:
+        raise ValueError("prepared_context_ref is required")
+    if not final_check_ref:
+        raise ValueError("final_check_ref is required")
+    if eatt.decision == "COMMIT" and commit_ref is None:
+        raise ValueError("commit_ref is required for COMMIT")
+    if eatt.effect != "NONE" and outcome_ref is None:
+        raise ValueError("outcome_ref is required when an effect is recorded")
+
     manifest: dict[str, Any] = {
         "version": "0.1",
         "execution_id": eatt.execution_id,
