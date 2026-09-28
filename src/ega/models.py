@@ -22,6 +22,34 @@ class AuthorizationScope:
     parameter_constraints: dict[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)
+class EvidenceItem:
+    """EGA-side reference to an upstream evidence item.
+
+    The item records provenance and decision-use classification; it does not
+    assert the truth of the upstream evidence or its source-reported confidence.
+    """
+    evidence_ref: str
+    digest: str
+    observed_at: str
+    evaluation_status: str
+    role: str | None = None
+    source_confidence: float | None = None
+
+@dataclass(frozen=True)
+class DecisionRecord:
+    """EGA-side record explaining why execution authority was issued.
+
+    This is not an EABC primitive. It preserves the full RAIG evidence
+    population considered by EGA, including evidence that was evaluated but
+    excluded from the authority decision.
+    """
+    decision_id: str
+    decision_time: str
+    intent_ref: str
+    authorization_scope_ref: str
+    evidence_items: tuple[EvidenceItem, ...] = field(default_factory=tuple)
+
+@dataclass(frozen=True)
 class ExecutionAuthority:
     authority_id: str
     principal: str
@@ -36,7 +64,6 @@ class ExecutionAuthority:
     ao_ref: str | None = None
     aee_ref: str | None = None
     ect_ref: str | None = None
-
 
 @dataclass(frozen=True)
 class ExecutionAttestation:
@@ -53,3 +80,6 @@ class ExecutionAttestation:
     ao_ref: str | None = None
     aee_ref: str | None = None
     ect_ref: str | None = None
+    decision_record_ref: str | None = None
+    decision_record_digest: str | None = None
+    selected_evidence_refs: tuple[str, ...] = field(default_factory=tuple)
