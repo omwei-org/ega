@@ -98,3 +98,72 @@ def test_eatt_references_decision_record_and_selected_evidence():
     assert eatt.decision_record_digest
     assert eatt.selected_evidence_refs == ("e1-human-constraint",)
     assert eatt.reason == "STALE_CONTEXT"
+
+
+def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
+    from ega.models import DecisionRecord, EvidenceItem
+
+    intent = RuntimeIntent(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        parameters={"value": 20},
+        environment="plant-7",
+        decision_ref="decision-e2e-001",
+        governance_context={"policy_refs": ["policy:process-v3"]},
+    )
+    scope = AuthorizationScope(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        environment="plant-7",
+        parameter_constraints={"value": {"min": 0, "max": 20}},
+    )
+    record = DecisionRecord(
+        decision_id="decision-e2e-001",
+        decision_time="2026-09-28T10:00:00Z",
+        intent_ref="intent-e2e-001",
+        authorization_scope_ref="scope-e2e-001",
+        evidence_items=(
+            EvidenceItem(
+                evidence_ref="e1-human-constraint",
+                digest="sha256:e1",
+                observed_at="2026-09-28T09:59:00Z",
+                evaluation_status="USED",
+                role="scope_constraint",
+            ),
+            EvidenceItem(
+                evidence_ref="e2-stale-observation",
+                digest="sha256:e2",
+                observed_at="2026-09-28T09:00:00Z",
+                evaluation_status="EVALUATED_NOT_USED",
+                role="runtime_observation",
+            ),
+        ),
+    )
+
+    authority = issue_authority(intent, scope, decision_record=record)
+    assert authority.decision_record_ref == record.decision_id
+    assert authority.decision_record_digest
+
+    prepared = prepare(authority, context_epoch=41)
+    result = commit(prepared, current_epoch=42)
+    eatt = execution_attestation(
+        prepared,
+        result,
+        execution_id="exec-e2e-001",
+        current_epoch=42,
+        decision_record=record,
+        selected_evidence_refs=("e1-human-constraint",),
+    )
+
+    assert result == {
+        "decision": "BLOCK",
+        "reason": "STALE_CONTEXT",
+        "applied": False,
+        "effect": "NONE",
+    }
+    assert eatt.decision_record_ref == record.decision_id
+    assert eatt.decision_record_digest
+    assert eatt.selected_evidence_refs == ("e1-human-constraint",)
+    assert eatt.effect == "NONE"
