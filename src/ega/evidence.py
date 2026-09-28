@@ -5,7 +5,29 @@ from hashlib import sha256
 import json
 from typing import Any
 
-from .models import ExecutionAttestation
+from .models import DecisionRecord, ExecutionAttestation
+
+
+def decision_record_digest(record: DecisionRecord) -> str:
+    payload = {
+        "decision_id": record.decision_id,
+        "decision_time": record.decision_time,
+        "intent_ref": record.intent_ref,
+        "authorization_scope_ref": record.authorization_scope_ref,
+        "evidence_items": [
+            {
+                "evidence_ref": item.evidence_ref,
+                "digest": item.digest,
+                "observed_at": item.observed_at,
+                "evaluation_status": item.evaluation_status,
+                "role": item.role,
+                "source_confidence": item.source_confidence,
+            }
+            for item in record.evidence_items
+        ],
+    }
+    return sha256(canonical_json(payload)).hexdigest()
+
 
 
 def canonical_json(value: Any) -> bytes:
