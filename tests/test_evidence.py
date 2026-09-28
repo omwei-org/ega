@@ -324,3 +324,74 @@ def test_eatt_rejects_unlisted_selected_evidence():
             decision_record=record,
             selected_evidence_refs=("e999",),
         )
+
+def test_evidence_bundle_rejects_mismatched_authority_ref():
+    prepared = prepare(make_authority(), context_epoch=1)
+    result = commit(prepared, current_epoch=1)
+    eatt = execution_attestation(
+        prepared, result, execution_id="exec-bundle-001", current_epoch=1
+    )
+    import pytest
+    with pytest.raises(ValueError, match="authority reference does not match"):
+        evidence_bundle(
+            eatt,
+            intent_ref="intent-001",
+            authority_ref="wrong-authority",
+            prepared_context_ref="ctx-001",
+            final_check_ref="check-001",
+            commit_ref="commit-001",
+        )
+
+
+def test_evidence_bundle_requires_commit_ref_for_commit():
+    prepared = prepare(make_authority(), context_epoch=1)
+    result = commit(prepared, current_epoch=1)
+    eatt = execution_attestation(
+        prepared, result, execution_id="exec-bundle-002", current_epoch=1
+    )
+    import pytest
+    with pytest.raises(ValueError, match="commit_ref is required"):
+        evidence_bundle(
+            eatt,
+            intent_ref="intent-001",
+            authority_ref=prepared.authority.authority_id,
+            prepared_context_ref="ctx-001",
+            final_check_ref="check-001",
+        )
+
+
+def test_evidence_bundle_rejects_missing_required_correlation_ref():
+    prepared = prepare(make_authority(), context_epoch=1)
+    result = commit(prepared, current_epoch=1)
+    eatt = execution_attestation(
+        prepared, result, execution_id="exec-bundle-003", current_epoch=1
+    )
+    import pytest
+    with pytest.raises(ValueError, match="final_check_ref is required"):
+        evidence_bundle(
+            eatt,
+            intent_ref="intent-001",
+            authority_ref=prepared.authority.authority_id,
+            prepared_context_ref="ctx-001",
+            final_check_ref="",
+            commit_ref="commit-001",
+        )
+
+
+def test_evidence_bundle_accepts_complete_commit_correlation():
+    prepared = prepare(make_authority(), context_epoch=1)
+    result = commit(prepared, current_epoch=1)
+    eatt = execution_attestation(
+        prepared, result, execution_id="exec-bundle-004", current_epoch=1
+    )
+    bundle = evidence_bundle(
+        eatt,
+        intent_ref="intent-001",
+        authority_ref=prepared.authority.authority_id,
+        prepared_context_ref="ctx-001",
+        final_check_ref="check-001",
+        commit_ref="commit-001",
+    )
+    assert bundle["references"]["authority"] == prepared.authority.authority_id
+    assert bundle["references"]["commit"] == "commit-001"
+    assert bundle["manifest_sha256"]
