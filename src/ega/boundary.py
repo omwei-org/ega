@@ -21,17 +21,21 @@ def prepare(authority: ExecutionAuthority, context_epoch: int) -> PreparedAuthor
         raise ValueError("only VALID execution authority may be prepared")
     return PreparedAuthority(authority, context_epoch, _digest(authority))
 
-def final_authority_check(prepared: PreparedAuthority, current_epoch: int, current_authority: ExecutionAuthority | None = None) -> str:
+def final_authority_check(prepared: PreparedAuthority, current_epoch: int, current_authority: ExecutionAuthority | None = None, current_evidence_digests: dict[str, str] | None = None) -> str:
     """Re-check authority/context immediately before commit."""
     if current_epoch != prepared.context_epoch:
         return "STALE_CONTEXT"
+    if current_evidence_digests is not None:
+        for evidence_ref in prepared.authority.aee_conditions:
+            if current_evidence_digests.get(evidence_ref) != prepared.authority.aee_condition_digests.get(evidence_ref):
+                return "AEE_CONDITION_FAILED"
     if current_authority is not None and _digest(current_authority) != prepared.authority_digest:
         return "AUTHORITY_DIGEST_MISMATCH"
     return "VALID"
 
-def commit(prepared: PreparedAuthority, current_epoch: int, current_authority: ExecutionAuthority | None = None) -> dict[str, Any]:
+def commit(prepared: PreparedAuthority, current_epoch: int, current_authority: ExecutionAuthority | None = None, current_evidence_digests: dict[str, str] | None = None) -> dict[str, Any]:
     """Return a commit decision; this seam performs no external effect.\n\n`applied` means the commit decision was accepted by this reference gate;\n`effect` records whether an external effect was actually performed. This\nreference implementation never performs the external effect itself.\n"""
-    reason = final_authority_check(prepared, current_epoch, current_authority)
+    reason = final_authority_check(prepared, current_epoch, current_authority, current_evidence_digests)
     if reason != "VALID":
         return {"decision": "BLOCK", "reason": reason, "applied": False, "effect": "NONE"}
     return {"decision": "COMMIT", "reason": "VALID", "applied": True, "effect": "NOT_EXECUTED"}
