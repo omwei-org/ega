@@ -1,6 +1,6 @@
 from typing import Any
-
-from .models import AuthorizationScope, ExecutionAuthority, RuntimeIntent
+from .models import AuthorizationScope, DecisionRecord, ExecutionAuthority, RuntimeIntent
+from .boundary import _decision_record_digest
 
 class AuthorizationError(ValueError):
     """Raised when runtime intent is outside the provisioning-time authorization scope."""
@@ -25,8 +25,14 @@ def _within_scope(intent: RuntimeIntent, scope: AuthorizationScope) -> bool:
             return False
     return True
 
-def issue_authority(intent: RuntimeIntent, scope: AuthorizationScope, authority_id: str = "ega-authority-001") -> ExecutionAuthority:
-    """Issue bounded execution authority from runtime intent within an external scope."""
+def issue_authority(
+    intent: RuntimeIntent,
+    scope: AuthorizationScope,
+    authority_id: str = "ega-authority-001",
+    *,
+    decision_record: DecisionRecord | None = None,
+) -> ExecutionAuthority:
+    """Issue bounded execution authority and bind it to an EGA decision record."""
     if not intent.principal or not intent.action or not intent.target:
         raise ValueError("principal, action, and target are required")
     if not intent.environment or not intent.decision_ref:
@@ -35,9 +41,20 @@ def issue_authority(intent: RuntimeIntent, scope: AuthorizationScope, authority_
         raise ValueError("authorization scope is incomplete")
     if not _within_scope(intent, scope):
         raise AuthorizationError("runtime intent is outside authorization scope")
+
+    if decision_record is not None:
+        if decision_record.decision_id != intent.decision_ref:
+            raise ValueError("decision record does not match runtime intent decision_ref")
+        if decision_record.intent_ref != intent.decision_ref and decision_record.intent_ref != "":
+            raise ValueError("decision record intent_ref must match runtime intent decision_ref")
+        if decision_record.authorization_scope_ref == "":
+            raise ValueError("decision record authorization_scope_ref is required")
+
     return ExecutionAuthority(
         authority_id=authority_id, principal=intent.principal, action=intent.action,
         target=intent.target, parameters=dict(intent.parameters), environment=intent.environment,
         source_decision=intent.decision_ref, governance_context=dict(intent.governance_context),
         evidence=dict(intent.evidence),
+        decision_record_ref=decision_record.decision_id if decision_record else None,
+        decision_record_digest=_decision_record_digest(decision_record) if decision_record else None,
     )
