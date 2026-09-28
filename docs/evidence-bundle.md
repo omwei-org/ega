@@ -57,6 +57,10 @@ bundle inputs
 
 The verifier must verify declared evidence and bindings; it must not infer missing claims.
 
+The `intent`, `authority`, `prepared_context`, `final_check`, `commit`, and `outcome` values in the current manifest are **opaque correlation references**. The reference implementation does not resolve them or prove that the referenced records exist. Their presence establishes a declared correlation handle only; independently verifiable lineage requires the referenced records and their integrity protection to be available to the verifier.
+
+`manifest_sha256` is a deterministic content digest of the manifest as constructed by this reference implementation. It is not a signature, authentication mechanism, or proof that the referenced records or an external effect are authentic.
+
 ## Current implementation boundary
 The current EGA implementation provides:
 - deterministic authority issuance;
