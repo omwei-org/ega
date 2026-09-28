@@ -148,7 +148,11 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
     assert authority.aee_conditions == ("e1-human-constraint",)
 
     prepared = prepare(authority, context_epoch=41)
-    result = commit(prepared, current_epoch=42)
+    result = commit(
+        prepared,
+        current_epoch=41,
+        current_evidence_digests={"e1-human-constraint": "sha256:e1-changed"},
+    )
     eatt = execution_attestation(
         prepared,
         result,
