@@ -54,5 +54,5 @@ def issue_authority(
         source_decision=intent.decision_ref, governance_context=dict(intent.governance_context),
         evidence=dict(intent.evidence),
         decision_record_ref=decision_record.decision_id if decision_record else None,
-        decision_record_digest=_decision_record_digest(decision_record) if decision_record else None,
+        decision_record_digest=decision_record_digest(decision_record) if decision_record else None,
     )
