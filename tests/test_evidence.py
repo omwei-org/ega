@@ -172,3 +172,50 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
     assert eatt.decision_record_digest
     assert eatt.selected_evidence_refs == ("e1-human-constraint",)
     assert eatt.effect == "NONE"
+
+def test_unchanged_aee_condition_allows_commit():
+    intent = RuntimeIntent(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        parameters={"value": 20},
+        environment="plant-7",
+        decision_ref="decision-positive-001",
+    )
+    scope = AuthorizationScope(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        environment="plant-7",
+        parameter_constraints={"value": {"min": 0, "max": 20}},
+    )
+    record = DecisionRecord(
+        decision_id="decision-positive-001",
+        decision_time="2026-09-28T10:00:00Z",
+        intent_ref="intent-positive-001",
+        authorization_scope_ref="scope-positive-001",
+        evidence_items=(
+            EvidenceItem(
+                evidence_ref="e1-human-constraint",
+                digest="sha256:e1",
+                observed_at="2026-09-28T09:59:00Z",
+                evaluation_status="USED",
+                role="commit_condition",
+            ),
+        ),
+    )
+
+    authority = issue_authority(intent, scope, decision_record=record)
+    prepared = prepare(authority, context_epoch=41)
+    result = commit(
+        prepared,
+        current_epoch=41,
+        current_evidence_digests={"e1-human-constraint": "sha256:e1"},
+    )
+
+    assert result == {
+        "decision": "COMMIT",
+        "reason": "VALID",
+        "applied": True,
+        "effect": "NOT_EXECUTED",
+    }
