@@ -65,7 +65,7 @@ def test_eatt_references_decision_record_and_selected_evidence():
     prepared = prepare(make_authority(), context_epoch=1)
     result = commit(prepared, current_epoch=2)
     record = DecisionRecord(
-        decision_id="decision-001",
+        decision_id="raig-784",
         decision_time="2026-09-28T10:00:00Z",
         intent_ref="intent-001",
         authorization_scope_ref="scope-001",
@@ -94,7 +94,7 @@ def test_eatt_references_decision_record_and_selected_evidence():
         decision_record=record,
         selected_evidence_refs=("e1-human-constraint",),
     )
-    assert eatt.decision_record_ref == "decision-001"
+    assert eatt.decision_record_ref == "raig-784"
     assert eatt.decision_record_digest
     assert eatt.selected_evidence_refs == ("e1-human-constraint",)
     assert eatt.reason == "STALE_CONTEXT"
