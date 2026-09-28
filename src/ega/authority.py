@@ -1,6 +1,6 @@
 from typing import Any
 from .models import AuthorizationScope, DecisionRecord, ExecutionAuthority, RuntimeIntent
-from .boundary import _decision_record_digest
+from .evidence import decision_record_digest
 
 class AuthorizationError(ValueError):
     """Raised when runtime intent is outside the provisioning-time authorization scope."""
