@@ -38,3 +38,29 @@ def test_authority_does_not_execute():
 def test_deterministic_issuance():
     intent, scope = make_intent(), make_scope()
     assert issue_authority(intent, scope) == issue_authority(intent, scope)
+
+
+def test_issue_authority_binds_decision_record():
+    from ega.models import DecisionRecord, EvidenceItem
+
+    intent = make_intent()
+    scope = make_scope()
+    record = DecisionRecord(
+        decision_id=intent.decision_ref,
+        decision_time="2026-09-28T10:00:00Z",
+        intent_ref="intent-001",
+        authorization_scope_ref="scope-001",
+        evidence_items=(
+            EvidenceItem(
+                evidence_ref="e1-human-constraint",
+                digest="sha256:e1",
+                observed_at="2026-09-28T09:59:00Z",
+                evaluation_status="USED",
+                role="scope_constraint",
+            ),
+        ),
+    )
+    authority = issue_authority(intent, scope, decision_record=record)
+    assert authority.decision_record_ref == intent.decision_ref
+    assert authority.decision_record_digest
+    assert authority.commit_conditions["context_epoch"] == "prepared_context_epoch"
