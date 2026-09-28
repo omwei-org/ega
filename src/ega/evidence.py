@@ -61,8 +61,8 @@ def evidence_bundle(
         raise ValueError("final_check_ref is required")
     if eatt.decision == "COMMIT" and commit_ref is None:
         raise ValueError("commit_ref is required for COMMIT")
-    if eatt.effect != "NONE" and outcome_ref is None:
-        raise ValueError("outcome_ref is required when an effect is recorded")
+    if eatt.effect not in {"NONE", "NOT_EXECUTED"} and outcome_ref is None:
+        raise ValueError("outcome_ref is required when an external effect is recorded")
 
     manifest: dict[str, Any] = {
         "version": "0.1",
