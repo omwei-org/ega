@@ -55,4 +55,8 @@ def issue_authority(
         evidence=dict(intent.evidence),
         decision_record_ref=decision_record.decision_id if decision_record else None,
         decision_record_digest=decision_record_digest(decision_record) if decision_record else None,
+        aee_conditions=tuple(
+            item.evidence_ref for item in (decision_record.evidence_items if decision_record else ())
+            if item.evaluation_status == "USED" and item.role == "commit_condition"
+        ),
     )
