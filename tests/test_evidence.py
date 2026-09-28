@@ -75,7 +75,7 @@ def test_eatt_references_decision_record_and_selected_evidence():
                 digest="sha256:e1",
                 observed_at="2026-09-28T09:59:00Z",
                 evaluation_status="USED",
-                role="scope_constraint",
+                role="commit_condition",
             ),
             EvidenceItem(
                 evidence_ref="e2-stale-observation",
@@ -145,6 +145,7 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
     authority = issue_authority(intent, scope, decision_record=record)
     assert authority.decision_record_ref == record.decision_id
     assert authority.decision_record_digest
+    assert authority.aee_conditions == ("e1-human-constraint",)
 
     prepared = prepare(authority, context_epoch=41)
     result = commit(prepared, current_epoch=42)
