@@ -45,8 +45,6 @@ def issue_authority(
     if decision_record is not None:
         if decision_record.decision_id != intent.decision_ref:
             raise ValueError("decision record does not match runtime intent decision_ref")
-        if decision_record.intent_ref != intent.decision_ref and decision_record.intent_ref != "":
-            raise ValueError("decision record intent_ref must match runtime intent decision_ref")
         if decision_record.authorization_scope_ref == "":
             raise ValueError("decision record authorization_scope_ref is required")
 
