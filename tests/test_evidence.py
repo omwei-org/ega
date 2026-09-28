@@ -62,8 +62,21 @@ def test_evidence_bundle_preserves_negative_boundary_result():
     assert bundle["references"]["commit"] is None
 
 def test_eatt_references_decision_record_and_selected_evidence():
-    prepared = prepare(make_authority(), context_epoch=1)
-    result = commit(prepared, current_epoch=2)
+    intent = RuntimeIntent(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        parameters={"value": 20},
+        environment="plant-7",
+        decision_ref="raig-784",
+    )
+    scope = AuthorizationScope(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        environment="plant-7",
+        parameter_constraints={"value": {"min": 0, "max": 20}},
+    )
     record = DecisionRecord(
         decision_id="raig-784",
         decision_time="2026-09-28T10:00:00Z",
@@ -86,6 +99,9 @@ def test_eatt_references_decision_record_and_selected_evidence():
             ),
         ),
     )
+    authority = issue_authority(intent, scope, decision_record=record)
+    prepared = prepare(authority, context_epoch=1)
+    result = commit(prepared, current_epoch=2)
     eatt = execution_attestation(
         prepared,
         result,
