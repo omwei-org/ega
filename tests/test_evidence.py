@@ -189,6 +189,52 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
     assert eatt.selected_evidence_refs == ("e1-human-constraint",)
     assert eatt.effect == "NONE"
 
+def test_issuance_evidence_is_not_automatically_promoted_to_aee_condition():
+    intent = RuntimeIntent(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        parameters={"value": 20},
+        environment="plant-7",
+        decision_ref="decision-separation-001",
+    )
+    scope = AuthorizationScope(
+        principal="agent-123",
+        action="open",
+        target="valve-v1",
+        environment="plant-7",
+        parameter_constraints={"value": {"min": 0, "max": 20}},
+    )
+    record = DecisionRecord(
+        decision_id="decision-separation-001",
+        decision_time="2026-09-28T10:00:00Z",
+        intent_ref="intent-separation-001",
+        authorization_scope_ref="scope-separation-001",
+        evidence_items=(
+            EvidenceItem(
+                evidence_ref="e-issuance",
+                digest="sha256:issuance",
+                observed_at="2026-09-28T09:59:00Z",
+                evaluation_status="USED",
+                role="issuance_basis",
+            ),
+            EvidenceItem(
+                evidence_ref="e-observation",
+                digest="sha256:observation",
+                observed_at="2026-09-28T09:59:30Z",
+                evaluation_status="EVALUATED_NOT_USED",
+                role="runtime_observation",
+            ),
+        ),
+    )
+
+    authority = issue_authority(intent, scope, decision_record=record)
+
+    assert authority.decision_record_ref == record.decision_id
+    assert authority.aee_conditions == ()
+    assert authority.aee_condition_digests == {}
+
+
 def test_unchanged_aee_condition_allows_commit():
     intent = RuntimeIntent(
         principal="agent-123",
