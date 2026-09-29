@@ -84,7 +84,7 @@ def test_fresh_known_observation_promoted_to_commit_condition_can_commit():
         current_evidence_digests={"obs-valve-001": "obs-digest-1"},
     )
     assert check == "VALID"
-    assert commit(prepared, check)["decision"] == "COMMIT"
+    assert commit(prepared, prepared.context_epoch, current_evidence_digests={"obs-valve-001": "obs-digest-1"})["decision"] == "COMMIT"
 
 
 def test_stale_observation_fails_commit_condition():
@@ -92,7 +92,7 @@ def test_stale_observation_fails_commit_condition():
         _observation(), evaluation_status="USED", role="commit_condition"
     )
     authority, _ = _authority(evidence)
-    prepared = prepare(authority)
+    prepared = prepare(authority, context_epoch=41)
 
     check = final_authority_check(
         prepared,
@@ -108,7 +108,7 @@ def test_unknown_observation_fails_when_the_required_observation_changes():
         _observation(), evaluation_status="USED", role="commit_condition"
     )
     authority, _ = _authority(evidence)
-    prepared = prepare(authority)
+    prepared = prepare(authority, context_epoch=41)
 
     unknown = _observation(state="UNKNOWN", digest="obs-digest-unknown")
     current_evidence = observation_to_evidence(
@@ -129,7 +129,7 @@ def test_uncertainty_change_fails_only_when_uncertainty_is_part_of_commit_eviden
         _observation(), evaluation_status="USED", role="issuance_basis"
     )
     authority, _ = _authority(issuance_only)
-    prepared = prepare(authority)
+    prepared = prepare(authority, context_epoch=41)
 
     # Uncertainty may change without becoming an AEE condition because the
     # observation was retained only as issuance evidence.
@@ -150,20 +150,22 @@ def test_execution_attestation_reconstructs_observer_lineage():
         _observation(), evaluation_status="USED", role="commit_condition"
     )
     authority, record = _authority(evidence)
-    prepared = prepare(authority)
+    prepared = prepare(authority, context_epoch=41)
     check = final_authority_check(
         prepared,
         current_epoch=prepared.context_epoch,
         current_evidence_digests={"obs-valve-001": "obs-digest-1"},
     )
-    result = commit(prepared, check)
+    result = commit(
+        prepared,
+        prepared.context_epoch,
+        current_evidence_digests={"obs-valve-001": "obs-digest-1"},
+    )
     eatt = execution_attestation(
         prepared,
-        current_epoch=prepared.context_epoch,
-        decision=result["decision"],
-        reason=result["reason"],
-        commit=result["decision"],
-        effect=result["effect"],
+        result,
+        "execution-001",
+        prepared.context_epoch,
         decision_record=record,
         selected_evidence_refs=("obs-valve-001",),
     )
