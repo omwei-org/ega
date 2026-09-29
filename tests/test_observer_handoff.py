@@ -76,7 +76,7 @@ def test_fresh_known_observation_promoted_to_commit_condition_can_commit():
         _observation(), evaluation_status="USED", role="commit_condition"
     )
     authority, _ = _authority(evidence)
-    prepared = prepare(authority)
+    prepared = prepare(authority, context_epoch=41)
 
     check = final_authority_check(
         prepared,
