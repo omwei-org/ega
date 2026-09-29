@@ -22,11 +22,30 @@ class AuthorizationScope:
     parameter_constraints: dict[str, Any] = field(default_factory=dict)
 
 @dataclass(frozen=True)
+class ObserverObservation:
+    """Read-only runtime observation handed from an Observer to EGA.
+
+    Observer reports facts and evidence quality; it does not authorize or
+    deny execution. EGA decides whether an observation is relevant to
+    authority issuance and/or must remain true at commit.
+    """
+    observation_ref: str
+    target: str
+    observed_at: str
+    state: str
+    value: Any = None
+    freshness: str = "UNKNOWN"
+    uncertainty: float | None = None
+    provenance: str | None = None
+    digest: str = ""
+
+@dataclass(frozen=True)
 class EvidenceItem:
     """EGA-side reference to an upstream evidence item.
 
-    The item records provenance and decision-use classification; it does not
-    assert the truth of the upstream evidence or its source-reported confidence.
+    The item records the Observer observation and EGA's decision-use
+    classification; it does not assert the truth of the upstream evidence
+    or its source-reported confidence.
     """
     evidence_ref: str
     digest: str
@@ -34,14 +53,20 @@ class EvidenceItem:
     evaluation_status: str
     role: str | None = None
     source_confidence: float | None = None
+    target: str | None = None
+    state: str | None = None
+    value: Any = None
+    freshness: str | None = None
+    uncertainty: float | None = None
+    provenance: str | None = None
 
 @dataclass(frozen=True)
 class DecisionRecord:
     """EGA-side record explaining why execution authority was issued.
 
-    This is not an EABC primitive. It preserves the full RAIG evidence
-    population considered by EGA, including evidence that was evaluated but
-    excluded from the authority decision.
+    This is not an EABC primitive. It preserves the full RAIG/Observer
+    evidence population considered by EGA, including evidence that was
+    evaluated but excluded from the authority decision.
     """
     decision_id: str
     decision_time: str
