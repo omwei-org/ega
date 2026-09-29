@@ -22,6 +22,12 @@ def decision_record_digest(record: DecisionRecord) -> str:
                 "evaluation_status": item.evaluation_status,
                 "role": item.role,
                 "source_confidence": item.source_confidence,
+                "target": item.target,
+                "state": item.state,
+                "value": item.value,
+                "freshness": item.freshness,
+                "uncertainty": item.uncertainty,
+                "provenance": item.provenance,
             }
             for item in record.evidence_items
         ],
