@@ -86,7 +86,7 @@ def test_fresh_known_observation_promoted_to_commit_condition_can_commit():
         current_evidence={"obs-valve-001": evidence},
     )
     assert check == "VALID"
-    assert commit(prepared, prepared.context_epoch, current_evidence_digests={"obs-valve-001": "obs-digest-1"})["decision"] == "COMMIT"
+    assert commit(prepared, prepared.context_epoch, current_evidence={"obs-valve-001": evidence})["decision"] == "COMMIT"
 
 
 def test_stale_observation_fails_commit_condition():
@@ -99,9 +99,9 @@ def test_stale_observation_fails_commit_condition():
     check = final_authority_check(
         prepared,
         current_epoch=prepared.context_epoch,
-        current_evidence={"obs-valve-001": current_evidence},
+        current_evidence={"obs-valve-001": observation_to_evidence(_observation(freshness="STALE"), evaluation_status="USED", role="commit_condition")},
     )
-    assert check == "AEE_CONDITION_FAILED:STATE_MISMATCH"
+    assert check == "AEE_CONDITION_FAILED:FRESHNESS_MISMATCH"
     assert commit(prepared, prepared.context_epoch, current_evidence={"obs-valve-001": current_evidence})["decision"] == "BLOCK"
 
 
@@ -123,7 +123,7 @@ def test_unknown_observation_fails_when_the_required_observation_changes():
         current_epoch=prepared.context_epoch,
         current_evidence={"obs-valve-001": current_evidence},
     )
-    assert check == "AEE_CONDITION_FAILED"
+    assert check == "AEE_CONDITION_FAILED:STATE_MISMATCH"
 
 
 def test_uncertainty_change_fails_only_when_uncertainty_is_part_of_commit_evidence():
