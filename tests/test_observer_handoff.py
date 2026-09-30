@@ -156,7 +156,7 @@ def test_execution_attestation_reconstructs_observer_lineage():
     check = final_authority_check(
         prepared,
         current_epoch=prepared.context_epoch,
-        current_evidence_digests={"obs-valve-001": "obs-digest-1"},
+        current_evidence={"obs-valve-001": evidence},
     )
     result = commit(
         prepared,
