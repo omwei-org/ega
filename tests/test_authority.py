@@ -63,3 +63,32 @@ def test_issue_authority_binds_decision_record():
     authority = issue_authority(intent, scope, decision_record=record)
     assert authority.decision_record_ref == intent.decision_ref
     assert authority.decision_record_digest
+
+
+def test_aee_predicate_survives_digest_change():
+    from ega.models import AEECondition, DecisionRecord, EvidenceItem
+    original = EvidenceItem("e1", "d1", "2026-09-30T10:00:00Z", "USED", "commit_condition",
+                            target="valve-v1", state="KNOWN", freshness="FRESH", uncertainty=0.02)
+    record = DecisionRecord("raig-decision-784", "2026-09-30T10:00:00Z", "intent-001", "scope-001",
+                            evidence_items=(original,),
+                            aee_conditions=(AEECondition("c1", "e1", "KNOWN", "FRESH", 0.10),))
+    intent = make_intent()
+    authority = issue_authority(intent, make_scope(), decision_record=record)
+    prepared = prepare(authority, 1)
+    current = EvidenceItem("e1", "d2", "2026-09-30T10:01:00Z", "USED", "commit_condition",
+                           target="valve-v1", state="KNOWN", freshness="FRESH", uncertainty=0.03)
+    assert final_authority_check(prepared, 1, current_evidence={"e1": current}) == "VALID"
+
+
+def test_aee_predicate_blocks_when_value_no_longer_holds():
+    from ega.models import AEECondition, DecisionRecord, EvidenceItem
+    original = EvidenceItem("e1", "d1", "2026-09-30T10:00:00Z", "USED", "commit_condition",
+                            target="valve-v1", state="KNOWN", freshness="FRESH", uncertainty=0.02)
+    record = DecisionRecord("raig-decision-785", "2026-09-30T10:00:00Z", "intent-001", "scope-001",
+                            evidence_items=(original,),
+                            aee_conditions=(AEECondition("c1", "e1", "KNOWN", "FRESH", 0.10),))
+    authority = issue_authority(make_intent(decision_ref="raig-decision-785"), make_scope(), decision_record=record)
+    prepared = prepare(authority, 1)
+    current = EvidenceItem("e1", "d2", "2026-09-30T10:01:00Z", "USED", "commit_condition",
+                           target="valve-v1", state="KNOWN", freshness="FRESH", uncertainty=0.15)
+    assert final_authority_check(prepared, 1, current_evidence={"e1": current}) == "AEE_CONDITION_FAILED:UNCERTAINTY_MAX_EXCEEDED"
