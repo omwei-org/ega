@@ -30,9 +30,7 @@ def _digest(authority: ExecutionAuthority) -> str:
         "ect_ref": authority.ect_ref,
         "decision_record_ref": authority.decision_record_ref,
         "decision_record_digest": authority.decision_record_digest,
-        "aee_conditions": authority.aee_conditions,
-        "aee_condition_digests": authority.aee_condition_digests,
-        "aee_predicates": [condition.__dict__ for condition in authority.aee_predicates],
+        "aee_conditions": [condition.__dict__ for condition in authority.aee_conditions],
     }
     return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -41,45 +39,30 @@ def prepare(authority: ExecutionAuthority, context_epoch: int) -> PreparedAuthor
         raise ValueError("only VALID execution authority may be prepared")
     return PreparedAuthority(authority, context_epoch, _digest(authority))
 
-def _evidence_from_authority(
-    prepared: PreparedAuthority,
-    evidence_items: dict[str, EvidenceItem],
-) -> tuple[EvidenceItem, ...]:
-    return tuple(
-        evidence_items[ref]
-        for ref in prepared.authority.aee_conditions
-        if ref in evidence_items
-    )
-
 def final_authority_check(
     prepared: PreparedAuthority,
     current_epoch: int,
     current_authority: ExecutionAuthority | None = None,
-    current_evidence_digests: dict[str, str] | None = None,
     current_evidence: dict[str, EvidenceItem] | None = None,
 ) -> str:
     """Re-check authority and EGA-defined AEE predicates immediately before commit.
 
-    Evidence digest changes are not themselves failures. If current_evidence is
-    supplied, the declared predicates are evaluated against it. The legacy
-    digest-only argument remains an integrity/reference seam for authorities
-    without explicit predicates.
+    AEE conditions are the single authority-side representation of the declared
+    commit predicates. Evidence identity/integrity remains in EvidenceItem and
+    DecisionRecord; a changed digest does not fail a predicate unless its
+    semantic value no longer satisfies the condition.
     """
     if current_epoch != prepared.context_epoch:
         return "STALE_CONTEXT"
 
-    if current_evidence is not None and prepared.authority.aee_predicates:
-        for condition in prepared.authority.aee_predicates:
+    if current_evidence is not None and prepared.authority.aee_conditions:
+        for condition in prepared.authority.aee_conditions:
             evidence = current_evidence.get(condition.evidence_ref)
             if evidence is None:
                 return "AEE_EVIDENCE_UNAVAILABLE"
             result = evaluate_aee_condition(condition, evidence)
             if result.status != "VALID":
                 return f"AEE_CONDITION_FAILED:{result.reason}"
-    elif current_evidence_digests is not None:
-        for evidence_ref in prepared.authority.aee_conditions:
-            if current_evidence_digests.get(evidence_ref) != prepared.authority.aee_condition_digests.get(evidence_ref):
-                return "AEE_CONDITION_FAILED"
 
     if current_authority is not None and _digest(current_authority) != prepared.authority_digest:
         return "AUTHORITY_DIGEST_MISMATCH"
@@ -89,12 +72,10 @@ def commit(
     prepared: PreparedAuthority,
     current_epoch: int,
     current_authority: ExecutionAuthority | None = None,
-    current_evidence_digests: dict[str, str] | None = None,
     current_evidence: dict[str, EvidenceItem] | None = None,
 ) -> dict[str, Any]:
     reason = final_authority_check(
-        prepared, current_epoch, current_authority,
-        current_evidence_digests, current_evidence
+        prepared, current_epoch, current_authority, current_evidence
     )
     if reason != "VALID":
         return {"decision": "BLOCK", "reason": reason, "applied": False, "effect": "NONE"}
