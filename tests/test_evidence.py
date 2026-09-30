@@ -263,8 +263,10 @@ def test_unchanged_aee_condition_allows_commit():
                 observed_at="2026-09-28T09:59:00Z",
                 evaluation_status="USED",
                 role="commit_condition",
+                state="KNOWN",
             ),
         ),
+        aee_conditions=(AEECondition("c1", "e1-human-constraint", state_equals="KNOWN"),),
     )
 
     authority = issue_authority(intent, scope, decision_record=record)
