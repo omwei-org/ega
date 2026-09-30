@@ -102,7 +102,7 @@ def test_stale_observation_fails_commit_condition():
         current_evidence={"obs-valve-001": observation_to_evidence(_observation(freshness="STALE"), evaluation_status="USED", role="commit_condition")},
     )
     assert check == "AEE_CONDITION_FAILED:FRESHNESS_MISMATCH"
-    assert commit(prepared, prepared.context_epoch, current_evidence={"obs-valve-001": current_evidence})["decision"] == "BLOCK"
+    assert commit(prepared, prepared.context_epoch, current_evidence={"obs-valve-001": observation_to_evidence(_observation(freshness="STALE"), evaluation_status="USED", role="commit_condition")})["decision"] == "BLOCK"
 
 
 def test_unknown_observation_fails_when_the_required_observation_changes():
@@ -161,7 +161,7 @@ def test_execution_attestation_reconstructs_observer_lineage():
     result = commit(
         prepared,
         prepared.context_epoch,
-        current_evidence_digests={"obs-valve-001": "obs-digest-1"},
+        current_evidence={"obs-valve-001": evidence},
     )
     eatt = execution_attestation(
         prepared,
