@@ -86,9 +86,7 @@ class ExecutionAuthority:
     ect_ref: str | None = None
     decision_record_ref: str | None = None
     decision_record_digest: str | None = None
-    aee_conditions: tuple[str, ...] = field(default_factory=tuple)
-    aee_condition_digests: dict[str, str] = field(default_factory=dict)
-    aee_predicates: tuple[AEECondition, ...] = field(default_factory=tuple)
+    aee_conditions: tuple[AEECondition, ...] = field(default_factory=tuple)
 
 @dataclass(frozen=True)
 class ExecutionAttestation:
