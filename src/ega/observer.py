@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .interop import EvidenceEnvelope, evidence_envelope_to_evidence
 from .models import EvidenceItem, ObserverObservation
 
 
@@ -9,11 +10,7 @@ def observation_to_evidence(
     evaluation_status: str,
     role: str | None = None,
 ) -> EvidenceItem:
-    """Normalize one read-only Observer observation into EGA evidence.
-
-    The Observer supplies the observation and its provenance/quality metadata.
-    EGA supplies only the decision-use classification (status and role).
-    """
+    """Backward-compatible adapter for the original EGA-local observation model."""
     if not observation.observation_ref:
         raise ValueError("observation_ref is required")
     if not observation.target:
@@ -37,4 +34,18 @@ def observation_to_evidence(
         freshness=observation.freshness,
         uncertainty=observation.uncertainty,
         provenance=observation.provenance,
+    )
+
+
+def evidence_envelope_to_ega(
+    envelope: EvidenceEnvelope,
+    *,
+    evaluation_status: str,
+    role: str | None = None,
+) -> EvidenceItem:
+    """Adapter from the interoperable evidence envelope into EGA evidence."""
+    return evidence_envelope_to_evidence(
+        envelope,
+        evaluation_status=evaluation_status,
+        role=role,
     )
