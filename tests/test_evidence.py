@@ -167,7 +167,7 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
     result = commit(
         prepared,
         current_epoch=41,
-        current_evidence_digests={"e1-human-constraint": "sha256:e1-changed"},
+        current_evidence={"e1-human-constraint": EvidenceItem("e1-human-constraint", "sha256:e1-changed", "2026-09-28T10:00:00Z", "USED", "commit_condition", state="UNKNOWN")},
     )
     eatt = execution_attestation(
         prepared,
@@ -180,7 +180,7 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
 
     assert result == {
         "decision": "BLOCK",
-        "reason": "AEE_CONDITION_FAILED",
+        "reason": "AEE_CONDITION_FAILED:STATE_MISMATCH",
         "applied": False,
         "effect": "NONE",
     }
