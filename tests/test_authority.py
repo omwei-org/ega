@@ -1,5 +1,6 @@
 import pytest
 from ega.authority import AuthorizationError, issue_authority
+from ega.boundary import prepare, final_authority_check
 from ega.models import AuthorizationScope, RuntimeIntent
 
 def make_intent(**overrides):
