@@ -13,6 +13,7 @@ from ega import (
     prepare,
 )
 from ega.evidence import decision_record_digest
+from ega.models import AEECondition
 
 
 def _observation(*, freshness="FRESH", state="KNOWN", uncertainty=0.02, digest="obs-digest-1"):
@@ -36,6 +37,7 @@ def _authority(evidence_item):
         intent_ref="intent-001",
         authorization_scope_ref="scope-001",
         evidence_items=(evidence_item,),
+        aee_conditions=(AEECondition("c-observation", evidence_item.evidence_ref, "KNOWN", "FRESH", 0.10),) if evidence_item.role == "commit_condition" else (),
     )
     intent = RuntimeIntent(
         principal="agent-123",
@@ -81,7 +83,7 @@ def test_fresh_known_observation_promoted_to_commit_condition_can_commit():
     check = final_authority_check(
         prepared,
         current_epoch=prepared.context_epoch,
-        current_evidence_digests={"obs-valve-001": "obs-digest-1"},
+        current_evidence={"obs-valve-001": evidence},
     )
     assert check == "VALID"
     assert commit(prepared, prepared.context_epoch, current_evidence_digests={"obs-valve-001": "obs-digest-1"})["decision"] == "COMMIT"
@@ -97,10 +99,10 @@ def test_stale_observation_fails_commit_condition():
     check = final_authority_check(
         prepared,
         current_epoch=prepared.context_epoch,
-        current_evidence_digests={"obs-valve-001": "obs-digest-stale"},
+        current_evidence={"obs-valve-001": current_evidence},
     )
-    assert check == "AEE_CONDITION_FAILED"
-    assert commit(prepared, check)["decision"] == "BLOCK"
+    assert check == "AEE_CONDITION_FAILED:STATE_MISMATCH"
+    assert commit(prepared, prepared.context_epoch, current_evidence={"obs-valve-001": current_evidence})["decision"] == "BLOCK"
 
 
 def test_unknown_observation_fails_when_the_required_observation_changes():
@@ -119,7 +121,7 @@ def test_unknown_observation_fails_when_the_required_observation_changes():
     check = final_authority_check(
         prepared,
         current_epoch=prepared.context_epoch,
-        current_evidence_digests={"obs-valve-001": current_evidence.digest},
+        current_evidence={"obs-valve-001": current_evidence},
     )
     assert check == "AEE_CONDITION_FAILED"
 
@@ -140,7 +142,7 @@ def test_uncertainty_change_fails_only_when_uncertainty_is_part_of_commit_eviden
     check = final_authority_check(
         prepared,
         current_epoch=prepared.context_epoch,
-        current_evidence_digests={"obs-valve-001": current.digest},
+        current_evidence={"obs-valve-001": current},
     )
     assert check == "VALID"
 
