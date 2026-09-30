@@ -26,6 +26,7 @@ class EvidenceEnvelope:
     provenance: str
     value: Any = None
     uncertainty: float | None = None
+    source_confidence: float | None = None
     integrity_ref: str = ""
 
 
@@ -41,6 +42,7 @@ def _integrity_payload(envelope: EvidenceEnvelope) -> dict[str, Any]:
         "provenance": envelope.provenance,
         "value": envelope.value,
         "uncertainty": envelope.uncertainty,
+        "source_confidence": envelope.source_confidence,
     }
 
 
@@ -72,6 +74,8 @@ def validate_evidence_envelope(envelope: EvidenceEnvelope) -> None:
         raise ValueError("observed_at must include a timezone")
     if not 0.0 <= (envelope.uncertainty if envelope.uncertainty is not None else 0.0) <= 1.0:
         raise ValueError("uncertainty must be between 0 and 1")
+    if envelope.source_confidence is not None and not 0.0 <= envelope.source_confidence <= 1.0:
+        raise ValueError("source_confidence must be between 0 and 1")
     if not envelope.integrity_ref:
         raise ValueError("integrity_ref is required")
     expected = evidence_envelope_integrity_ref(envelope)
@@ -104,5 +108,6 @@ def evidence_envelope_to_evidence(
         value=envelope.value,
         freshness=envelope.freshness,
         uncertainty=envelope.uncertainty,
+        source_confidence=envelope.source_confidence,
         provenance=envelope.provenance,
     )
