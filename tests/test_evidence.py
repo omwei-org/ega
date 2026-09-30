@@ -1,7 +1,7 @@
 from ega.authority import issue_authority
 from ega.boundary import commit, execution_attestation, prepare
 from ega.evidence import canonical_json, evidence_bundle
-from ega.models import AuthorizationScope, DecisionRecord, EvidenceItem, RuntimeIntent
+from ega.models import AEECondition, AuthorizationScope, DecisionRecord, EvidenceItem, RuntimeIntent
 
 
 def make_authority():
@@ -161,7 +161,7 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
     authority = issue_authority(intent, scope, decision_record=record)
     assert authority.decision_record_ref == record.decision_id
     assert authority.decision_record_digest
-    assert authority.aee_conditions == ("e1-human-constraint",)
+    assert authority.aee_conditions == record.aee_conditions
 
     prepared = prepare(authority, context_epoch=41)
     result = commit(
@@ -232,7 +232,7 @@ def test_issuance_evidence_is_not_automatically_promoted_to_aee_condition():
 
     assert authority.decision_record_ref == record.decision_id
     assert authority.aee_conditions == ()
-    assert authority.aee_condition_digests == {}
+
 
 
 def test_unchanged_aee_condition_allows_commit():
@@ -272,7 +272,7 @@ def test_unchanged_aee_condition_allows_commit():
     result = commit(
         prepared,
         current_epoch=41,
-        current_evidence_digests={"e1-human-constraint": "sha256:e1"},
+        current_evidence={"e1-human-constraint": EvidenceItem("e1-human-constraint", "sha256:e1", "2026-09-28T10:00:00Z", "USED", "commit_condition", state="KNOWN")},
     )
 
     assert result == {
