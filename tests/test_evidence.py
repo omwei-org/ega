@@ -117,7 +117,7 @@ def test_eatt_references_decision_record_and_selected_evidence():
 
 
 def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
-    from ega.models import DecisionRecord, EvidenceItem
+    from ega.models import AEECondition, DecisionRecord, EvidenceItem
 
     intent = RuntimeIntent(
         principal="agent-123",
@@ -154,6 +154,13 @@ def test_end_to_end_decision_record_authority_prepare_block_and_eatt():
                 observed_at="2026-09-28T09:00:00Z",
                 evaluation_status="EVALUATED_NOT_USED",
                 role="runtime_observation",
+            ),
+        ),
+        aee_conditions=(
+            AEECondition(
+                condition_id="c-human-constraint",
+                evidence_ref="e1-human-constraint",
+                state_equals="KNOWN",
             ),
         ),
     )
