@@ -31,6 +31,7 @@ def decision_record_digest(record: DecisionRecord) -> str:
             }
             for item in record.evidence_items
         ],
+        "aee_conditions": [asdict(condition) for condition in record.aee_conditions],
     }
     return sha256(canonical_json(payload)).hexdigest()
 
