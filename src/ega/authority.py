@@ -63,4 +63,5 @@ def issue_authority(
             item.evidence_ref: item.digest for item in (decision_record.evidence_items if decision_record else ())
             if item.evaluation_status == "USED" and item.role == "commit_condition"
         },
+        aee_predicates=decision_record.aee_conditions if decision_record else (),
     )
