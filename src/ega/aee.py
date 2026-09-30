@@ -2,23 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import EvidenceItem
-
-
-@dataclass(frozen=True)
-class AEECondition:
-    """Minimal semantic seam for an EGA-projected execution condition.
-
-    The condition is intentionally narrow and deterministic. It describes
-    properties that must remain true at the execution boundary; it does not
-    assign materiality or define governance policy.
-    """
-
-    condition_id: str
-    evidence_ref: str
-    state_equals: str | None = None
-    freshness_equals: str | None = None
-    uncertainty_max: float | None = None
+from .models import AEECondition, EvidenceItem
 
 
 @dataclass(frozen=True)
