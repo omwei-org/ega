@@ -1,6 +1,7 @@
 """EGA reference implementation."""
 
 from .models import (
+    AEECondition,
     AuthorizationScope,
     DecisionRecord,
     EvidenceItem,
