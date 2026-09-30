@@ -23,12 +23,7 @@ class AuthorizationScope:
 
 @dataclass(frozen=True)
 class ObserverObservation:
-    """Read-only runtime observation handed from an Observer to EGA.
-
-    Observer reports facts and evidence quality; it does not authorize or
-    deny execution. EGA decides whether an observation is relevant to
-    authority issuance and/or must remain true at commit.
-    """
+    """Read-only runtime observation handed from an Observer to EGA."""
     observation_ref: str
     target: str
     observed_at: str
@@ -41,12 +36,7 @@ class ObserverObservation:
 
 @dataclass(frozen=True)
 class EvidenceItem:
-    """EGA-side reference to an upstream evidence item.
-
-    The item records the Observer observation and EGA's decision-use
-    classification; it does not assert the truth of the upstream evidence
-    or its source-reported confidence.
-    """
+    """EGA-side reference to an upstream evidence item."""
     evidence_ref: str
     digest: str
     observed_at: str
@@ -61,18 +51,23 @@ class EvidenceItem:
     provenance: str | None = None
 
 @dataclass(frozen=True)
-class DecisionRecord:
-    """EGA-side record explaining why execution authority was issued.
+class AEECondition:
+    """EGA-defined predicate over one evidence item."""
+    condition_id: str
+    evidence_ref: str
+    state_equals: str | None = None
+    freshness_equals: str | None = None
+    uncertainty_max: float | None = None
 
-    This is not an EABC primitive. It preserves the full RAIG/Observer
-    evidence population considered by EGA, including evidence that was
-    evaluated but excluded from the authority decision.
-    """
+@dataclass(frozen=True)
+class DecisionRecord:
+    """EGA-side record explaining why execution authority was issued."""
     decision_id: str
     decision_time: str
     intent_ref: str
     authorization_scope_ref: str
     evidence_items: tuple[EvidenceItem, ...] = field(default_factory=tuple)
+    aee_conditions: tuple[AEECondition, ...] = field(default_factory=tuple)
 
 @dataclass(frozen=True)
 class ExecutionAuthority:
@@ -93,6 +88,7 @@ class ExecutionAuthority:
     decision_record_digest: str | None = None
     aee_conditions: tuple[str, ...] = field(default_factory=tuple)
     aee_condition_digests: dict[str, str] = field(default_factory=dict)
+    aee_predicates: tuple[AEECondition, ...] = field(default_factory=tuple)
 
 @dataclass(frozen=True)
 class ExecutionAttestation:
