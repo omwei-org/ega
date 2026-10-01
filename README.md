@@ -1,6 +1,6 @@
 # EGA — Execution Governance Authority
 
-EGA is a **reference architecture and semantic reference implementation** for establishing explicit execution authority from Runtime AI Governance input.
+EGA is a reference architecture for the authorization-to-execution-authority step: it turns Runtime AI Governance output into explicit, bounded execution authority that a downstream execution boundary (such as EABC) can consume. The repository includes a minimal executable model of this step. It is not an implementation of EABC and not a production system.
 
 ```
 Runtime AI Governance
@@ -79,9 +79,9 @@ EGA provides one concrete architecture for the upstream authorization-to-executi
 Runtime AI Governance → EGA → EABC → Enforcement Boundary → EFFECT
 ```
 
-## Reference implementation
+## Executable model
 
-The repository contains a minimal deterministic Python **semantic reference implementation**.
+The repository contains a minimal deterministic Python model of the EGA step.
 
 ```bash
 python -m pip install -e ".[test]"
@@ -100,7 +100,7 @@ The second example models a provider-neutral runtime-control failure: a human re
 
 ## Repository status
 
-The reference architecture and the RAIG/Observer → EGA interoperability seams are defined. The implementation includes a minimal executable contract for runtime intent, external authorization scope, fail-closed evaluation, execution-authority issuance, and a prepare/final-check/commit seam.
+The reference architecture and the RAIG/Observer → EGA interoperability seams are defined. The executable model includes a minimal contract for runtime intent, external authorization scope, fail-closed evaluation, execution-authority issuance, and a prepare/final-check/commit seam.
 
 See:
 
