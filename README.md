@@ -1,6 +1,6 @@
 # EGA — Execution Governance Authority
 
-EGA is a reference architecture and open-source reference implementation for establishing explicit execution authority from Runtime AI Governance input.
+EGA is a **reference architecture and semantic reference implementation** for establishing explicit execution authority from Runtime AI Governance input.
 
 ```
 Runtime AI Governance
@@ -30,6 +30,18 @@ It accepts runtime intent and relevant governance context, normalizes heterogene
 EGA is **authorization-complete but execution-blind**.
 
 It does not commit effects or determine whether an authorized action may become an effect under current execution conditions.
+
+## Evidence boundary
+
+EGA may receive runtime evidence from an upstream Observer or equivalent evidence source through a provider-neutral evidence envelope.
+
+The evidence contract carries evidence identity, subject or target, state or value, observation time, temporal basis, provenance, uncertainty, source confidence where provided, schema version, and an integrity reference.
+
+The Observer reports evidence. It does not assign materiality, create execution authority, or promote evidence into a commit condition.
+
+EGA determines which evidence is materially relevant to authorization and, where required, explicitly projects selected evidence properties into execution-boundary conditions.
+
+An evidence change does not by itself invalidate an execution condition. The condition is evaluated against the current evidence at the execution boundary.
 
 ## What EGA does
 
@@ -69,7 +81,7 @@ Runtime AI Governance → EGA → EABC → Enforcement Boundary → EFFECT
 
 ## Reference implementation
 
-The repository contains a minimal deterministic Python implementation.
+The repository contains a minimal deterministic Python **semantic reference implementation**.
 
 ```bash
 python -m pip install -e ".[test]"
@@ -82,12 +94,13 @@ The implementation does not execute external actions. It includes a semantic PRE
 
 - [Minimal EGA → EABC flow](examples/minimal/README.md)
 - [Human boundary / substituted execution path](examples/jozsef-human-boundary/README.md)
+- [Observer → EGA evidence handoff](examples/jozsef-observer-handoff/golden-case.md)
 
 The second example models a provider-neutral runtime-control failure: a human restriction permits only execution path A, path A becomes unavailable, and a technically available substitute path B must not acquire execution authority merely because the system can execute it.
 
 ## Repository status
 
-The reference architecture and initial RAIG → EGA interface are defined. The implementation includes a minimal executable contract for runtime intent, external authorization scope, fail-closed evaluation, execution-authority issuance, and a prepare/final-check/commit seam.
+The reference architecture and the RAIG/Observer → EGA interoperability seams are defined. The implementation includes a minimal executable contract for runtime intent, external authorization scope, fail-closed evaluation, execution-authority issuance, and a prepare/final-check/commit seam.
 
 See:
 
