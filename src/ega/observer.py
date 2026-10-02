@@ -43,7 +43,16 @@ def evidence_envelope_to_ega(
     evaluation_status: str,
     role: str | None = None,
 ) -> EvidenceItem:
-    """Adapter from the interoperable evidence envelope into EGA evidence."""
+    """Map provider-neutral evidence into EGA without adding authority.
+
+    The Observer/evidence provider supplies evidentiary facts only. EGA-side
+    evaluation_status and role are classifications applied by the caller;
+    they are not authority semantics supplied by the Observer. The adapter
+    must not infer materiality, policy meaning, authorized execution basis,
+    commit conditions, or protected-effect/path enforcement. Evidence
+    identity/digest changes are not themselves condition failures;
+    authorized predicates are evaluated separately by EGA.
+    """
     return evidence_envelope_to_evidence(
         envelope,
         evaluation_status=evaluation_status,
