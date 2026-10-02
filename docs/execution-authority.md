@@ -6,10 +6,12 @@ Execution authority is the explicit, bounded authorization that an execution bou
 
 It is distinct from governance policy, runtime intent, an execution command, a prediction of future state, and a successful execution result.
 
+The execution authority must be grounded in an authorized execution basis. EGA evaluates against that basis; it does not silently redefine the authoritative domain semantics from which the basis derives. How a deployment provisions or represents that basis is architecture-dependent.
+
 ## Conceptual model
 
 ```
-Governance Context + Runtime Intent + Authorization Scope
+Governance Context + Runtime Intent + Authorized Execution Basis + Authorization Scope
                          │
                          ▼
                         EGA
@@ -75,7 +77,7 @@ The current Python implementation intentionally flattens these artifacts. Theref
 
 ### Important semantic constraint
 
-The implementation's `aee_conditions` / `aee_condition_digests` fields are a **minimal reference seam for commit-time condition checking**. They must not be read as a complete AEE model or as a general evidence engine.
+The implementation's `aee_conditions` field is a **minimal reference seam for commit-time condition checking**. They must not be read as a complete AEE model or as a general evidence engine.
 
 In particular:
 
