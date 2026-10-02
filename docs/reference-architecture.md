@@ -41,6 +41,8 @@ The key boundary is between **authorization** and **execution**.
 
 EGA establishes explicit authority for an intended execution. It does not establish that the execution can be committed under every future runtime condition.
 
+The execution conditions relied upon by EGA must derive from an authorized execution basis. EGA must not silently redefine authoritative domain semantics at runtime. The source and form of that execution basis are provisioning and governance concerns; EGA consumes the authorized basis when evaluating runtime intent and evidence.
+
 EABC and the downstream enforcement boundary independently evaluate the authority and current execution conditions before an effect is committed.
 
 Therefore:
@@ -65,7 +67,7 @@ Runtime AI Governance → EGA → EABC → Enforcement Boundary → EFFECT
 
 ## Material relevance
 
-EGA is the architectural point at which the authorized execution scope and its relevant constraints are made explicit.
+EGA is the architectural point at which the authorized execution scope and its relevant constraints are made explicit. This does not mean that EGA authors or silently translates the underlying domain policy at runtime; it consumes an authorized execution basis and evaluates the current request against it.
 
 EABC does not infer why a particular condition is materially relevant. It verifies the conditions declared as part of the execution authority and applicable execution contract.
 
