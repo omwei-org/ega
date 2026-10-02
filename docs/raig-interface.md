@@ -22,7 +22,9 @@ This input is **not itself execution authority**.
 
 ## EGA processing
 
-EGA uses the canonical input together with applicable provisioning-time authorization scope to determine what execution authority may be issued.
+EGA uses the canonical input together with an applicable, authorized execution basis and provisioning-time authorization scope to determine what execution authority may be issued.
+
+The execution basis may be supplied by different governance or domain systems. Its representation and provisioning mechanism are deployment-specific. EGA does not silently redefine authoritative domain semantics during runtime evaluation.
 
 ```
 RAIG output
@@ -41,7 +43,7 @@ The resulting authority preserves sufficient identity, scope, context, validity,
 | Layer | Responsibility |
 |---|---|
 | Runtime AI Governance | Governance decision, policy/risk context, runtime intent and evidence |
-| EGA | Construction and issuance of explicit execution authority |
+| EGA | Evaluation and issuance of explicit execution authority against an authorized execution basis |
 | EABC | Binding and checking declared execution-authority conditions at the execution boundary |
 | Enforcement Boundary | Independent evaluation of current execution conditions and commit |
 | Effect | Externally observable result |
@@ -81,4 +83,5 @@ The reference implementation will freeze these details incrementally:
 - authority scope representation;
 - validity and freshness semantics;
 - evidence/provenance requirements;
-- adapter requirements for heterogeneous RAIG systems.
+- adapter requirements for heterogeneous RAIG systems;
+- how a deployment supplies its authorized execution basis to EGA.
