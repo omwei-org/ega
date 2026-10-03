@@ -2,18 +2,18 @@
 
 This example makes the Observer → EGA handoff concrete using one valve-control action and four evidence treatments:
 
-1. Issuance evidence — supports authority issuance but is not a commit condition.
-2. Explicit commit predicate — EGA projects a property of evidence into the execution boundary.
-3. Evidence change that still satisfies the predicate — the evidence digest changes, but the authority remains valid.
-4. Evidence change that fails the predicate — the final check blocks.
+1. issuance evidence — supports authority issuance but is not automatically a commit condition;
+2. an explicit EGA-defined commit predicate;
+3. evidence changes while the predicate remains true;
+4. evidence changes so the predicate fails.
 
-The Observer remains read-only and evidentiary. The interoperable evidence contract carries evidence identity, state, temporal and integrity semantics. EGA establishes execution authority and determines evidence materiality. The current Python implementation still represents the AEE condition seam minimally; it is not yet a general AEE predicate evaluator.
+The Observer remains read-only and evidentiary. The interoperable evidence contract carries evidence identity, state, temporal and integrity semantics. EGA establishes execution authority and determines evidence materiality. The AEE condition is the normative predicate selected by EGA; the Observer does not create it.
 
 ## 1. Concrete execution attempt
 
 The requested action is:
 
-~~~
+~~~text
 principal   = agent-123
 action      = set
 target      = valve-v1
@@ -25,7 +25,7 @@ The provisioning-time authorization scope permits this action.
 
 The Observer produces an interoperable evidence envelope:
 
-~~~
+~~~text
 schema_version = observer-evidence/1.0
 evidence_id    = obs-valve-001
 subject        = valve-v1
@@ -45,7 +45,7 @@ The Observer reports what it observed and the associated evidence-quality metada
 
 The observation crosses the generic evidence contract:
 
-~~~
+~~~text
 Observer
     ↓
 EvidenceEnvelope
@@ -55,7 +55,7 @@ EGA adapter
 EvidenceItem
 ~~~
 
-The contract is deliberately narrower than EGA's governance model.
+The current Python implementation provides this contract in `src/ega/interop.py`.
 
 It carries:
 
@@ -63,9 +63,11 @@ It carries:
 - subject/target;
 - observed state/value, including explicit UNKNOWN;
 - observation time;
-- temporal basis and freshness metadata;
+- temporal basis;
+- freshness;
 - provenance;
 - uncertainty when available;
+- source confidence when available;
 - integrity reference;
 - schema/version semantics.
 
@@ -78,30 +80,30 @@ It does not carry:
 - BLOCK/COMMIT;
 - enforcement instructions.
 
-The adapter normalizes the envelope into EGA's internal evidence model. It does not decide materiality or authority.
+The adapter validates the envelope, verifies its canonical SHA-256 integrity reference, and normalizes it into EGA's internal `EvidenceItem`. It does not decide materiality or authority.
 
 ## 3. Variant A — issuance evidence only
 
 EGA may use the observation when establishing authority:
 
-~~~
+~~~text
 evaluation_status = USED
 role              = issuance_basis
 ~~~
 
-The DecisionRecord therefore records that the observation was materially considered for issuance.
+The `DecisionRecord` records that the observation was considered for issuance.
 
 However:
 
-~~~
+~~~text
 aee_conditions = ()
 ~~~
 
-The observation is not automatically a condition that must remain true at commit.
+The observation is therefore not automatically a condition that must remain true at commit.
 
 For example:
 
-~~~
+~~~text
 T0:
     uncertainty = 0.02
     integrity_ref = D1
@@ -111,11 +113,11 @@ T1:
     integrity_ref = D2
 ~~~
 
-If uncertainty was retained only as issuance evidence, its later change does not by itself invalidate the authority. The evidence remains reconstructable through the DecisionRecord.
+If uncertainty was retained only as issuance evidence, its later change does not by itself invalidate the authority. The evidence remains reconstructable through the `DecisionRecord`.
 
 Invariant:
 
-~~~
+~~~text
 changed evidence ≠ failed execution condition
 ~~~
 
@@ -125,14 +127,14 @@ EGA may determine that a runtime property must remain applicable at the executio
 
 For example:
 
-~~~
+~~~text
 evaluation_status = USED
 role              = commit_condition
 ~~~
 
 Conceptually, EGA projects the following predicate:
 
-~~~
+~~~text
 state == KNOWN
 AND freshness == FRESH
 AND uncertainty <= 0.10
@@ -140,7 +142,7 @@ AND uncertainty <= 0.10
 
 The semantic transition is:
 
-~~~
+~~~text
 Observer evidence
      ↓
 EGA materiality decision
@@ -150,25 +152,24 @@ EGA-defined predicate
 AEE execution condition
 ~~~
 
-The Observer did not create this predicate. The evidence contract contains no such field. EGA explicitly selected the property and made it normative for this authority.
+The Observer did not create this predicate. The evidence contract contains no such normative field. EGA explicitly selects the property and makes it normative for this authority.
 
-The current reference implementation represents this projection minimally through:
+The current implementation represents the condition through an `AEECondition` containing the evidence reference plus the supported predicates:
 
+~~~text
+evidence_ref
+state_equals
+freshness_equals
+uncertainty_max
 ~~~
-aee_conditions = ("obs-valve-001",)
 
-aee_condition_digests = {
-    "obs-valve-001": "D1"
-}
-~~~
-
-That reference/digest binding is an implementation seam, not the final semantic condition language.
+The evaluator is implemented in `src/ega/aee.py`.
 
 ## 5. Variant C — evidence changes, predicate still holds
 
 Now suppose the Observer reports a new observation before commit:
 
-~~~
+~~~text
 T0:
     state       = KNOWN
     freshness   = FRESH
@@ -182,23 +183,23 @@ T1:
     integrity_ref = D2
 ~~~
 
-The evidence representation changed, so:
+The evidence representation changed:
 
-~~~
+~~~text
 D1 ≠ D2
 ~~~
 
 But EGA's predicate remains:
 
-~~~
+~~~text
 state == KNOWN
 AND freshness == FRESH
 AND uncertainty <= 0.10
 ~~~
 
-and at T1:
+At T1:
 
-~~~
+~~~text
 KNOWN = true
 FRESH = true
 0.03 <= 0.10 = true
@@ -206,7 +207,7 @@ FRESH = true
 
 Therefore:
 
-~~~
+~~~text
 evidence changed
         ↓
 predicate re-evaluated
@@ -216,19 +217,17 @@ predicate still TRUE
 COMMIT remains semantically permissible
 ~~~
 
-This is the distinction Jozsef's example exposes: an evidence digest is an identity/integrity mechanism; it is not itself the normative predicate.
+This is the key distinction: an evidence digest is an identity/integrity mechanism; it is not itself the normative predicate.
 
-### Current implementation boundary
+The current implementation explicitly supports this distinction. `evaluate_aee_condition()` evaluates the predicate against the current `EvidenceItem`; it does not require the current digest to equal the original digest.
 
-The current Python reference seam does not yet evaluate this predicate. Its digest comparison would treat D1 → D2 as a condition-binding change.
-
-Therefore this variant is a **semantic target for the next AEE implementation step**, not a claim that the current implementation already performs general predicate evaluation.
+This behavior is covered by `test_aee_predicate_survives_digest_change` in `tests/test_authority.py`.
 
 ## 6. Variant D — evidence changes and predicate fails
 
 Assume instead:
 
-~~~
+~~~text
 T0:
     state       = KNOWN
     freshness   = FRESH
@@ -244,7 +243,7 @@ T1:
 
 The EGA-defined predicate is now false:
 
-~~~
+~~~text
 state == KNOWN       → false
 freshness == FRESH   → false
 uncertainty <= 0.10  → true
@@ -252,7 +251,7 @@ uncertainty <= 0.10  → true
 
 The semantic result is:
 
-~~~
+~~~text
 predicate FALSE
         ↓
 BLOCK
@@ -266,19 +265,21 @@ The point is:
 
 > The relevant property was explicitly made an execution condition, and that condition no longer holds at commit.
 
+The current `final_authority_check()` invokes the AEE evaluator immediately before commit and returns an AEE failure when a projected condition no longer holds.
+
 ## 7. UNKNOWN is evidence, not a governance decision
 
 An Observer may legitimately report:
 
-~~~
+~~~text
 state = UNKNOWN
 freshness = STALE
 uncertainty = 0.20
 ~~~
 
-This does not mean:
+This does not itself mean:
 
-~~~
+~~~text
 authority = invalid
 commit = blocked
 ~~~
@@ -289,13 +290,13 @@ Only when EGA has projected a relevant property into the execution conditions do
 
 Therefore:
 
-~~~
+~~~text
 UNKNOWN ≠ automatically BLOCK
 ~~~
 
 but:
 
-~~~
+~~~text
 UNKNOWN + condition requiring KNOWN
         → predicate FALSE
         → BLOCK
@@ -303,9 +304,9 @@ UNKNOWN + condition requiring KNOWN
 
 ## 8. Final authority check
 
-The complete semantic commit path is:
+The implemented commit path is:
 
-~~~
+~~~text
 PreparedAuthority
        ↓
 FINAL_AUTHORITY_CHECK
@@ -317,13 +318,13 @@ FINAL_AUTHORITY_CHECK
          COMMIT / BLOCK
 ~~~
 
-The execution boundary does not infer why EGA selected a condition.
+The execution boundary does not infer why EGA selected a condition. It evaluates the condition explicitly bound to the authority.
 
-It evaluates the condition that was explicitly bound to the authority.
+The current `commit()` function is still a reference boundary operation: a successful COMMIT returns `effect = NOT_EXECUTED`. It does not itself execute a real-world effect.
 
-This is the intended separation:
+The intended separation is:
 
-~~~
+~~~text
 Observer:
     what is evidenced?
 
@@ -348,7 +349,7 @@ SLC:
 | Evidence contract | evidence identity, temporal basis, integrity semantics, schema/version | materiality, authority, enforcement |
 | Observer → EGA adapter | normalized evidence representation | materiality or authority |
 | EGA | intent, authorization scope, governance decision, evidence relevance | physical enforcement |
-| DecisionRecord | full evidence population considered by EGA | execution enforcement |
+| DecisionRecord | evidence population considered by EGA | execution enforcement |
 | AEE projection | which selected properties must remain true at commit | upstream governance reasoning |
 | EABC / execution boundary | declared execution-boundary requirements | why governance selected them |
 | SLC | how to enforce declared requirements non-bypassably | upstream policy interpretation |
@@ -358,7 +359,7 @@ SLC:
 
 After the execution attempt, EAtt can preserve:
 
-~~~
+~~~text
 Observer evidence
         ↓
 EvidenceEnvelope
@@ -380,7 +381,7 @@ execution outcome
 
 For a blocked case, the relevant lineage includes:
 
-~~~
+~~~text
 authority_id
 authority_digest
 decision_record_ref
@@ -396,9 +397,9 @@ This allows later reconstruction of both why the authority existed and why the e
 
 ## 11. Semantic boundary
 
-The complete responsibility chain is:
+The current implementation establishes the following responsibility chain:
 
-~~~
+~~~text
 Observer
     → reports evidence
 
@@ -406,14 +407,14 @@ Evidence contract
     → preserves evidence identity, temporal and integrity semantics
 
 EGA adapter
-    → normalizes evidence
+    → validates and normalizes evidence
 
 EGA
     → establishes authority
     → determines evidence materiality
 
 DecisionRecord
-    → preserves the full evidence population
+    → preserves the evidence considered by EGA
 
 AEE
     → carries explicitly selected execution predicates
@@ -430,7 +431,7 @@ EAtt
 
 Core invariants:
 
-~~~
+~~~text
 observation ≠ authorization
 evidence ≠ commit condition
 changed evidence ≠ failed condition
@@ -439,17 +440,58 @@ authorization ≠ enforcement
 COMMIT decision ≠ EFFECT
 ~~~
 
-## 12. What this example establishes
+## 12. Current implementation boundary
 
-This case establishes the intended Observer → evidence interoperability seam without making the Observer part of EGA.
+This example documents what the current reference implementation actually supports.
+
+It supports:
+
+1. Observer-compatible evidence ingestion through `EvidenceEnvelope`;
+2. canonical evidence integrity validation;
+3. normalization to `EvidenceItem`;
+4. EGA-defined state/freshness/uncertainty predicates;
+5. re-evaluation of those predicates against current evidence;
+6. preservation of `DecisionRecord` and authority lineage;
+7. blocking when an explicitly projected AEE condition fails.
+
+It does **not** yet provide a general arbitrary value-expression language. For example:
+
+~~~text
+catalog.price_cents(T1, SKU1) == 2500
+~~~
+
+is the intended next concrete predicate for the ComOS experiment, but it is not yet a supported `AEECondition` field.
+
+That distinction matters: the Observer → EGA interoperability seam is implemented, while the richer domain-specific value predicate needed for the ComOS catalog case is a separate next step.
+
+The example therefore does not claim that arbitrary value predicates are already implemented.
+
+## 13. What this example establishes
 
 The Observer can remain an independent upstream component. The evidence contract is small enough to be implemented independently of EGA's governance model. The adapter remains small. EGA remains responsible for establishing execution authority and determining which evidence properties are materially relevant. Only explicit EGA projection turns an evidence property into an execution-boundary condition.
 
-The example also exposes the next implementation boundary clearly:
+The current implementation therefore gives us a concrete interoperability seam:
 
-1. the evidence contract defines identity, temporal and integrity semantics;
-2. EGA defines the normative predicate;
-3. the execution boundary evaluates that predicate;
-4. SLC enforces the resulting boundary non-bypassably.
+~~~text
+Observer
+    ↓
+EvidenceEnvelope
+    ↓
+EGA adapter
+    ↓
+EvidenceItem
+    ↓
+EGA-defined AEE condition
+    ↓
+Final authority check
+    ↓
+COMMIT / BLOCK
+~~~
 
-That is the semantic chain needed for a real interoperability seam without coupling Observer governance to EGA governance.
+The next implementation boundary is deliberately separate:
+
+1. add the minimum value predicate needed for the ComOS catalog case;
+2. test the golden path and failure cases;
+3. only then connect the real Observer package.
+
+That keeps the Observer integration test focused on interoperability rather than simultaneously changing the EGA condition language.
