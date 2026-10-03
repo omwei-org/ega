@@ -21,6 +21,7 @@ def _validate_condition(condition: AEECondition) -> None:
         condition.state_equals is None
         and condition.freshness_equals is None
         and condition.uncertainty_max is None
+        and condition.value_equals is None
     ):
         raise ValueError("AEE condition must contain at least one predicate")
     if condition.uncertainty_max is not None and not 0.0 <= condition.uncertainty_max <= 1.0:
@@ -61,6 +62,13 @@ def evaluate_aee_condition(
             condition.condition_id,
             "FAILED",
             "FRESHNESS_MISMATCH",
+        )
+
+    if condition.value_equals is not None and evidence.value != condition.value_equals:
+        return ConditionEvaluation(
+            condition.condition_id,
+            "FAILED",
+            "VALUE_MISMATCH",
         )
 
     if condition.uncertainty_max is not None:
