@@ -1,343 +1,543 @@
 # ComOS + Observer Integration Experiment
 
-**Status:** BASELINE CODE-VERIFIED / INTEGRATION NOT IMPLEMENTED  
+**Status:** COMOS BASELINE CODE-VERIFIED / OBSERVER→EGA INTEGRATION NOT IMPLEMENTED  
 **Date:** 2026-10-03
 
 ## Purpose
 
 Test the semantic seam between execution and independent evidence using a local ComOS Node + Observer + EGA setup.
 
-The experiment is deliberately small and local. It must not couple Observer into the ComOS authorization or execution path.
+The experiment is deliberately small and local. Observer must remain an evidence source; it must not become part of ComOS authorization or execution.
 
-The first phase is now grounded in a **code-verified ComOS baseline**. EGA and Observer are not yet connected to ComOS.
+The current document records the inspected **ComOS Node v1.0.15** execution baseline. It does not claim that Observer or SLC enforcement has already been integrated.
 
 ## Architectural separation
 
 ```
-ComOS = execution side
-Observer = independent evidence side
-EGA = evaluates evidence against the independently established authorization basis
+ComOS = execution substrate
+Observer = independent evidence source
+EGA = evaluates evidence against an independently established authorization basis
+SLC / execution gate = enforcement boundary under test
 ```
 
 The intended evidence path is:
 
 ```
-ComOS pre-state / target
-        |
-        v
-    Observer
-        |
-        v
- EvidenceEnvelope
-        |
-        v
-      EGA
-        |
-        v
- execution authority / projected conditions
+ComOS pre-state
+      |
+      v
+  Observer
+      |
+      v
+EvidenceEnvelope
+      |
+      v
+    EGA
+      |
+      v
+execution authority / projected conditions
+      |
+      v
+execution boundary
 ```
 
 The ComOS execution path remains independent:
 
 ```
-Hub
-  -> authenticated pull
-  -> ComOS Node
-  -> ACT
-  -> handler
-  -> local effect
-  -> receipt
+authenticated node pull
+        ->
+      ACT
+        ->
+ handler lookup
+        ->
+ execution boundary
+        ->
+   handler(payload)
+        ->
+   ComOS effect
+        ->
+  completion receipt
 ```
 
-Observer must never become an authorization lookup, execution authority, permission oracle, or hidden part of the ComOS execution path.
+Observer must never become an authorization lookup, permission oracle, execution authority, or hidden part of the ComOS execution path.
 
 ---
 
 # ComOS Baseline — Code-Verified
 
-The baseline below is derived from direct inspection of the production ComOS Node v1.0.15 bundle `bundle/server.mjs`. It is the starting point for the integration experiment; it is not an EGA/Observer result.
+The baseline below is derived from direct inspection of the production ComOS Node v1.0.15 bundle `bundle/server.mjs`.
 
-## 1. Federation authentication
+This is a **code baseline**, not an EGA/Observer result. No claim is made here that a `retail_sale` has already been executed through the local test instance.
 
-For the `federation_node_act_complete` route, the production request is verified through `verifyNodeSigned`.
+## 1. Node-signed federation envelope
 
-The canonical signed input is exactly:
+ComOS authenticates node-signed federation routes with `verifyNodeSigned`.
 
-```
-{ node_id, nonce, timestamp, route }
-```
-
-with canonical representation:
+The canonical signed input is:
 
 ```
 ${node_id}|${nonce}|${timestamp}|${route}
 ```
 
-The verification path resolves the node's bound public key and verifies the signature over those canonical bytes.
-
-### Finding
-
-The federation signature authenticates the node identity, nonce, timestamp, and route.
-
-It does **not** cryptographically cover the execution payload.
-
-## 2. Payload binding finding
-
-The inspected `verifyNodeSigned` implementation extracts only the envelope/signature fields required for verification:
+The signature therefore covers:
 
 ```
 node_id
 nonce
 timestamp
 route
-signature
 ```
 
-Execution-relevant fields such as:
+The node public key is resolved from the node identity and the signature is verified over the canonical bytes.
+
+### Binding property
+
+The inspected signature does **not** include the ACT payload or its execution parameters.
+
+In particular, the following are not part of `canonicalEnvelope()`:
 
 ```
 act_id
-outcome
-result
 payload
 tenant_id
 items
+outcome
+result
 ```
 
-are not included in `canonicalEnvelope()` and are not supplied to `crypto.verify()`.
+Therefore the precise finding is:
 
-Therefore:
+> The inspected federation signature authenticates the node-scoped route invocation, but does not cryptographically bind the execution-relevant ACT payload or protected-effect parameters.
 
-> The inspected federation signature does not cryptographically bind the ACT payload or its execution-relevant parameters.
-
-This is a **binding-property finding**, not a claim that ComOS execution is otherwise unauthorized or unsafe.
-
-## 3. Execution path
-
-The currently relevant commerce ACT handler is:
-
-```
-retail_sale
-```
-
-The handler calls:
-
-```
-createBrokeredPendingOrder(...)
-```
-
-which creates a new pending order in the local commerce database.
-
-The `payment_confirm` handler is outside the scope of this first experiment.
-
-## 4. Persistent execution state
-
-The relevant SQLite table is:
-
-```
-orders (
-  order_id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  total_cents INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-)
-```
-
-The exact database interface used by the order module is `getCommerceDb()`.
-
-The resulting `retail_sale` state therefore includes:
-
-```
-order_id
-tenant_id
-status = "pending"
-total_cents
-```
-
-## 5. Price and total semantics
-
-For each sale item, the execution code resolves the unit price as follows:
-
-1. If the SKU exists in the local catalog, the catalog `price_cents` takes precedence.
-2. If the SKU is absent from the catalog, the execution path may use the payload price fields.
-3. Quantity is applied to the selected unit price.
-4. The resulting sum is written to `orders.total_cents`.
-
-Formally:
-
-```
-total_cents = sum(unit_price_cents * qty)
-```
-
-This matters for the next experiment because catalog price is an **execution-relevant pre-existing state dependency** that is actually read by `retail_sale`.
-
-It is not, merely by being read, an authorization condition. Any authorization predicate over that state must be independently established and evaluated by EGA.
-
-## 6. Baseline boundary map
-
-```
-                    ComOS Baseline
-
- signed federation envelope
-          |
-          +-- node_id
-          +-- nonce
-          +-- timestamp
-          +-- route
-          |
-          v
- authenticated route
-          |
-          v
-         ACT
-          |
-          v
-    retail_sale handler
-          |
-       +--+--+
-       |     |
-      READ  WRITE
-       |     |
-    catalog orders
-       |     |
-       +--+--+
-          |
-          v
-       receipt
-```
-
-The important boundary property is:
-
-```
-transport authentication
-        !=
-cryptographic binding of execution parameters
-```
-
-The transport signature establishes authenticated route invocation. It does not, by itself, establish a cryptographic binding between an authorization/delivery artifact and the parameters of the resulting protected effect.
+This is a **binding-property finding**. It is not, by itself, a claim that ComOS execution is unsafe or unauthorized.
 
 ---
 
-# Experimental target
+# 2. Actual autonomous execution path
 
-Do **not** start with payment or ledger flows.
+The autonomous node loop polls the federation drain route and receives queued ACTs.
 
-The first integration target should be the smallest existing `retail_sale` path for which an independently observable pre-existing state is available.
+The relevant sequence is:
 
-The preferred dependency is the local catalog entry used by `retail_sale`, especially:
+```
+Node loop
+   |
+   v
+federation_node_drain_queue
+   |
+   v
+authenticated node identity
+   |
+   v
+pending ACT -> delivered
+   |
+   v
+ACT payload
+   |
+   v
+handlers.get(kind)
+   |
+   v
+handler(act.payload)
+   |
+   v
+ComOS effect
+   |
+   v
+federation_node_act_complete
+```
+
+The important execution boundary is immediately before:
+
+```
+await handler(act.payload)
+```
+
+At that point the handler has been selected, but its effect code has not yet run.
+
+This is the correct location for a future experimental execution gate. The gate should not be embedded inside a commerce handler.
+
+---
+
+# 3. Current commerce handler scope
+
+The inspected bundle registers these commerce ACT handlers:
+
+```
+retail_sale
+payment_confirm
+```
+
+The first experiment should use `retail_sale`.
+
+Other catalogue/inventory/fulfilment operations are not the first execution target merely because they exist elsewhere in the bundle.
+
+---
+
+# 4. Actual `retail_sale` state dependency
+
+`retail_sale` calls:
+
+```
+createBrokeredPendingOrder(tenantId, items, opts)
+```
+
+For each requested item, the function reads the tenant-scoped product model using:
+
+```
+tenant_id
+product_id
+active = true
+```
+
+It then takes the stored product `price` as the unit price.
+
+The relevant product fields are:
+
+```
+tenant_id
+product_id
+name
+price
+currency
+category
+sku
+digital
+active
+created_at
+updated_at
+```
+
+### Important correction
+
+The current ComOS implementation does **not** use the earlier illustrative state:
 
 ```
 (tenant_id, sku, price_cents)
 ```
 
-The exact SKU and tenant must be selected from the actual local ComOS instance at test time.
+The real execution dependency is:
 
-This replaces the earlier illustrative `set_position(valve-v1, 20)` target. That example was only a conceptual placeholder; the inspected ComOS implementation gives us a concrete existing execution path and a real pre-state dependency.
+```
+(tenant_id, product_id, active, price)
+```
+
+A product may also contain a `sku`, but the inspected `createBrokeredPendingOrder()` lookup is by `product_id`, not by `sku`.
+
+Therefore the first experiment must use an actual `tenant_id` + `product_id` from the local ComOS instance.
+
+---
+
+# 5. Actual effect sequence
+
+The order path performs persistent effects before returning its result.
+
+For each sale line it first calls:
+
+```
+reserveInventory(tenantId, product_id, quantity)
+```
+
+After all required inventory has been reserved, it calculates pricing and creates the order document:
+
+```
+Orders.create(doc)
+```
+
+The order document contains, among other fields:
+
+```
+tenant_id
+order_id
+lines
+subtotal
+tax
+shipping
+total
+currency
+status = "pending"
+created_at
+updated_at
+```
+
+Therefore the protected execution effect is **not** just the final order-row creation.
+
+The first persistent effect begins with inventory reservation.
+
+This is why an execution gate placed immediately before:
+
+```
+handler(act.payload)
+```
+
+is materially different from a check inserted inside `createBrokeredPendingOrder()`: the former can block the complete handler invocation before inventory reservation or order creation begins.
+
+---
+
+# 6. Pricing semantics
+
+After product prices are read, `createBrokeredPendingOrder()` calculates the subtotal and calls `resolvePrice()`.
+
+The pricing configuration may contribute:
+
+```
+tax_rate
+shipping_flat
+free_shipping_over
+```
+
+The resulting values are:
+
+```
+subtotal
+tax
+shipping
+total
+```
+
+The exact price predicate for the first EGA experiment should therefore be kept deliberately narrow.
+
+For example:
+
+```
+authorized product price = P
+observed product price = P
+```
+
+This avoids turning the first experiment into a general pricing-policy test.
+
+---
+
+# 7. Actual persistent storage
+
+The inspected ComOS bundle uses MongoDB/Mongoose for the commerce models.
+
+The local configuration inspected for the node uses:
+
+```
+MONGODB_URI=mongodb://127.0.0.1:27017
+MONGODB_DATABASE=comos-node-core
+```
+
+Tenant-scoped commerce databases follow:
+
+```
+<tenant_id>-comai
+```
+
+For example, the inspected retail tenant database is:
+
+```
+federation-retail-comai
+```
+
+The relevant product collection is:
+
+```
+retail_products
+```
+
+The inspected collection was empty at the time of baseline inspection. This means a real experiment still needs a concrete local product state; it must not invent one in the documentation.
+
+There is no basis for the earlier SQLite `orders`-table description, so that description is removed from this document.
+
+---
+
+# 8. Completion receipt is post-execution
+
+After handler execution, the node calls:
+
+```
+federation_node_act_complete
+```
+
+The `result` field is a completion receipt.
+
+It is not the original ACT payload and must not be reused as pre-execution authorization evidence.
+
+The temporal separation is:
+
+```
+PRE-EXECUTION
+state/evidence
+    ->
+EGA evaluation
+    ->
+execution
+    ->
+effect
+    ->
+POST-EXECUTION
+completion receipt / observation
+```
+
+A post-execution receipt cannot silently become the evidence used to authorize the execution that already happened.
+
+---
+
+# 9. Baseline boundary map
+
+```
+                    ComOS Node
+
+ node-signed envelope
+        |
+        v
+ authenticated federation route
+        |
+        v
+ drain queued ACT
+        |
+        v
+     ACT payload
+        |
+        v
+   handlers.get(kind)
+        |
+        v
+ [EXPERIMENTAL EXECUTION GATE]
+        |
+        v
+  handler(act.payload)
+        |
+        +----------------------+
+        |                      |
+        v                      v
+   product read          inventory reserve
+        |                      |
+        +----------+-----------+
+                   |
+                   v
+             order creation
+                   |
+                   v
+          act_complete receipt
+```
+
+The bracketed gate is **not currently an SLC implementation**. It is the candidate experimental boundary where an execution decision can be tested before the ComOS handler is invoked.
+
+---
+
+# Experimental target
+
+Do not start with payment or ledger flows.
+
+The first target should be the smallest existing `retail_sale` execution for which a concrete, independently observable pre-existing product state is available.
+
+Preferred state:
+
+```
+tenant_id
+product_id
+active
+price
+```
+
+The exact tenant and product must be selected from the actual local ComOS instance at test time.
+
+Observer reports this state as evidence only.
+
+It does not decide whether the observed price is authorized.
 
 ---
 
 # Experimental sequence
 
-## Step 0 — Preserve the ComOS baseline
+## Step 0 — Establish a real local product baseline
 
-Before adding Observer or EGA, retain the code-verified baseline:
+Before connecting Observer or EGA:
 
-1. verify the actual federation verification path;
-2. verify the signed-field scope;
-3. execute one real `retail_sale`;
-4. verify the resulting `orders` row through the exact commerce DB interface;
-5. verify the exact `total_cents` calculation semantics.
+1. identify one actual tenant;
+2. identify one actual product;
+3. record its current `product_id`, `active`, and `price`;
+4. confirm that the product is the one actually read by the `retail_sale` path;
+5. establish the controlled sale input separately.
 
-The baseline must not depend on mock signatures, synthetic receipts, heuristic DB access, or inferred exports.
+Do not use SQLite, a synthetic database adapter, or an invented ComOS HTTP/MCP interface as a substitute for the actual implementation.
 
 ## Step 1 — Observe pre-existing state
 
-Identify one catalog state that:
-
-- exists before execution;
-- is actually read by `retail_sale`;
-- can be observed independently by Observer;
-- has a deterministic representation suitable for an EvidenceEnvelope.
-
-Candidate:
+Observer reads the product state independently:
 
 ```
 tenant_id = T
-sku       = S
-price_cents = P
+product_id = P
+active = true
+price = X
 ```
 
-Observer reports evidence only. It does not decide whether `P` is authorized.
+Observer produces an `EvidenceEnvelope`.
 
-## Step 2 — EGA evaluation
+The evidence path carries facts such as state, freshness, provenance, uncertainty, and source confidence.
 
-Establish the authorization basis independently of Observer.
+Observer does not create authorization.
 
-For example, the authorization basis may contain a predicate equivalent to:
+## Step 2 — Establish authorization independently
+
+The authorization basis is established outside Observer.
+
+For example:
 
 ```
-catalog.price_cents(tenant, sku) == authorized_price_cents
+authorized product = P
+authorized price = X
+required state = active
 ```
 
-Observer then supplies evidence about the current state.
+EGA evaluates the Observer evidence against that independently established basis.
 
 The semantic flow is:
 
 ```
-independently established authorization basis
-                    +
-             Observer evidence
-                    |
-                    v
-                   EGA
-                    |
-          evaluates authorized predicate
-                    |
-                    v
-       authority / projected conditions
+independent authorization basis
+             +
+       Observer evidence
+             |
+             v
+            EGA
+             |
+             v
+   execution conditions
 ```
 
-The critical property is:
+The critical invariant remains:
 
-> Observer evidence is evidence. It is not authorization.
+> Observation is not authorization.
 
 ## Step 3 — Golden case
 
-Use a pre-execution state satisfying the independently established predicate.
+Use a real pre-execution state satisfying the independently established predicate.
 
 Example:
 
 ```
 Authorization basis:
   tenant = T1
-  sku = SKU-001
-  authorized price = 2500 cents
+  product = P1
+  authorized price = 25.00
+  required active = true
 
-Pre-state:
-  catalog price = 2500 cents
-
-Observer:
+Observed pre-state:
+  price = 25.00
+  active = true
   KNOWN + FRESH
-  observed price = 2500 cents
 
 EGA:
-  authorized predicate satisfied
+  predicates satisfied
 ```
 
-Only after this evaluation should the execution-boundary experiment proceed.
+Only after the EGA decision should the controlled execution boundary be crossed.
 
-## Step 4 — Negative evidence cases
+## Step 4 — Negative cases
 
-Run the same structure with independently distinguishable evidence states:
+Repeat with controlled changes to the observed pre-state.
 
 ### VALUE MISMATCH
 
 ```
-Authorization: price = 2500
-Observed:      price = 3000
-Evidence:      KNOWN + FRESH
+Authorized price: 25.00
+Observed price:   30.00
+State:            KNOWN + FRESH
 
 EGA:
   predicate not satisfied
@@ -346,74 +546,95 @@ EGA:
 ### STALE
 
 ```
-Authorization: price = 2500
-Observed:      price = 2500
-Evidence:      STALE
+Authorized price: 25.00
+Observed price:   25.00
+Freshness:        STALE
 
 EGA:
-  freshness requirement not satisfied
+  freshness predicate not satisfied
 ```
 
-### UNKNOWN
+### UNKNOWN / INSUFFICIENT EVIDENCE
 
 ```
-Authorization: price = 2500
-Observed:      UNKNOWN
+Authorization exists
+but required evidence is unavailable or unknown
 
 EGA:
-  insufficient evidence
+  execution condition cannot be established
 ```
 
 ### CONFLICT
 
-If the Observer integration exposes conflicting observations, preserve the conflict as evidence semantics. Do not collapse it into an authorization decision inside the Observer.
-
-## Step 5 — Execute and compare post-state
-
-After the pre-execution evaluation, execute the controlled `retail_sale`.
-
-Then compare:
-
-```
-ComOS execution result / DB state
-              vs.
-independent Observer evidence
-```
-
-This is a separate post-execution consistency/evidence check.
-
-It must not be confused with the pre-execution EGA evaluation.
+If Observer exposes conflicting observations, preserve that conflict as evidence semantics. Do not collapse the conflict into an authorization decision inside Observer.
 
 ---
 
-# Critical temporal distinction
+# 10. Changed evidence semantics
 
-If Observer observes only after the ComOS effect, its evidence is **post-execution evidence**.
+A changed observation is not automatically a failed condition merely because its evidence digest changed.
 
-It cannot silently become a pre-execution authorization input.
+The EGA condition is evaluated against the current evidence value and its predicates.
 
-Therefore the experiment must explicitly distinguish:
+Therefore:
 
 ```
-PRE-EXECUTION
+same logical evidence reference
++
+new observed value/digest
++
+predicate evaluation
+```
+
+is the intended model for re-evaluation.
+
+The experiment must not implement:
+
+```
+digest changed -> BLOCK
+```
+
+as an independent rule.
+
+The relevant question is whether the current evidence still satisfies the independently established condition.
+
+---
+
+# 11. Pre- vs post-execution evidence
+
+The experiment must explicitly distinguish:
+
+### Pre-execution
+
+```
+ComOS state
+   ->
 Observer evidence
-    ->
+   ->
 EGA evaluation
-    ->
-execution
+   ->
+execution decision
+   ->
+handler
+   ->
+effect
 ```
 
 from:
 
+### Post-execution
+
 ```
-EXECUTION
-    ->
+handler
+   ->
 effect
-    ->
-Observer evidence
+   ->
+completion receipt / observation
 ```
 
-The second flow can support independent observation, audit, or post-execution consistency checking. It does not establish the first flow.
+Post-execution evidence can support audit, observation, or consistency checking.
+
+It does not retroactively establish the authorization basis for an effect that has already happened.
 
 ---
 
@@ -421,15 +642,16 @@ The second flow can support independent observation, audit, or post-execution co
 
 - Keep the first implementation local.
 - Do not connect to live production infrastructure.
-- Do not put Observer into the ComOS authorization/execution path.
+- Do not put Observer into the ComOS authorization or execution path.
 - Do not make Observer interpret domain policy.
 - Do not make Observer create AEE, commit conditions, or execution authority.
-- Do not infer permission merely because Observer evidence was successfully transported.
-- Do not treat Observer labels such as `KNOWN` or `FRESH` as normative authorization by themselves.
-- Do not use evidence identity/digest changes as automatic condition failures; EGA evaluates the authorized predicate against current evidence.
-- Keep the Observer -> EGA adapter semantics provider-neutral.
-- Do not infer implementation interfaces from names; use the actual ComOS and Observer code.
-- Do not use mock signatures, synthetic receipts, heuristic DB access, or fallback interfaces as evidence for the baseline.
+- Do not infer permission merely because Observer evidence crossed an interface.
+- Do not treat `KNOWN` or `FRESH` as normative authorization by themselves.
+- Do not use evidence digest changes as automatic condition failures.
+- Keep the Observer -> EGA adapter provider-neutral.
+- Use the actual ComOS implementation rather than inferred HTTP, MCP, SQLite, or database interfaces.
+- Do not use mock signatures, synthetic receipts, or heuristic database access as evidence for the ComOS baseline.
+- Do not call the experimental execution gate an SLC unless and until it satisfies the applicable EABC/EBP conformance requirements.
 
 ---
 
@@ -437,14 +659,17 @@ The second flow can support independent observation, audit, or post-execution co
 
 The integration experiment succeeds when a minimal runnable setup demonstrates all of the following:
 
-1. ComOS executes a controlled local effect independently.
-2. Observer independently observes relevant **pre-execution** state.
+1. A real local ComOS product state exists before execution.
+2. Observer independently observes that pre-execution state.
 3. Observer evidence reaches EGA through the defined evidence boundary.
-4. EGA evaluates that evidence against an independently established authorization basis.
+4. EGA evaluates the evidence against an independently established authorization basis.
 5. KNOWN/FRESH, STALE, UNKNOWN, mismatch, and conflict semantics remain distinguishable where applicable.
 6. Observer evidence is not promoted into authorization merely by transport or classification.
-7. The resulting ComOS execution can be independently checked against the observed pre-state and resulting persistent state.
-8. The ComOS baseline remains unchanged by the evidence path.
+7. A COMMIT path reaches the actual ComOS execution boundary and can produce the controlled local effect.
+8. A BLOCK path prevents handler invocation and therefore prevents the effect from starting.
+9. The resulting persistent ComOS state can be independently checked.
+10. Post-execution receipts remain separate from pre-execution authorization evidence.
+11. The ComOS baseline remains unchanged by the Observer evidence path.
 
 ---
 
@@ -456,14 +681,10 @@ The Observer -> EGA evidence adapter contract was formalized on `main` at:
 12df2a7be7cd39f9e68a43e80aa3b62096e5dbb7
 ```
 
-The ComOS + Observer experiment plan was previously documented at commit:
+The current EGA implementation contains a minimal exact-value predicate (`value_equals`) and re-evaluates that predicate against current evidence.
 
-```
-e4d672c9a8d2340cecd38cdfd9e4cb17979c94bd
-```
+This document records the inspected ComOS v1.0.15 execution baseline and supersedes the earlier conceptual description that used SQLite orders and `(tenant_id, sku, price_cents)`.
 
-This document supersedes the earlier conceptual target description by recording the inspected ComOS v1.0.15 execution baseline.
-
-**Current implementation status:** ComOS baseline verified; Observer -> EGA -> ComOS integration not yet implemented.
+**Current implementation status:** ComOS baseline code-verified; Observer -> EGA -> ComOS integration not yet implemented.
 
 No implementation should be inferred from this document alone.
