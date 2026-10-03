@@ -58,6 +58,7 @@ class AEECondition:
     state_equals: str | None = None
     freshness_equals: str | None = None
     uncertainty_max: float | None = None
+    value_equals: Any = None
 
 @dataclass(frozen=True)
 class DecisionRecord:
