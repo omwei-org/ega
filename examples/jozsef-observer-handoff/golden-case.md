@@ -454,17 +454,17 @@ It supports:
 6. preservation of `DecisionRecord` and authority lineage;
 7. blocking when an explicitly projected AEE condition fails.
 
-It does **not** yet provide a general arbitrary value-expression language. For example:
+It does **not** yet provide a general expression language. The current minimal value predicate is exact `value_equals` matching. For the ComOS experiment this can represent the required protected catalog state as:
 
 ~~~text
-catalog.price_cents(T1, SKU1) == 2500
+value_equals = {
+    tenant_id: T1,
+    sku: SKU1,
+    price_cents: 2500
+}
 ~~~
 
-is the intended next concrete predicate for the ComOS experiment, but it is not yet a supported `AEECondition` field.
-
-That distinction matters: the Observer → EGA interoperability seam is implemented, while the richer domain-specific value predicate needed for the ComOS catalog case is a separate next step.
-
-The example therefore does not claim that arbitrary value predicates are already implemented.
+This is intentionally narrower than an arbitrary expression such as `catalog.price_cents(T1, SKU1) == 2500`. The Observer → EGA interoperability seam is implemented, and the minimum concrete value predicate needed for the first ComOS experiment is now implemented as well.
 
 ## 13. What this example establishes
 
@@ -490,8 +490,8 @@ COMMIT / BLOCK
 
 The next implementation boundary is deliberately separate:
 
-1. add the minimum value predicate needed for the ComOS catalog case;
-2. test the golden path and failure cases;
-3. only then connect the real Observer package.
+1. connect the real Observer evidence envelope to this existing seam;
+2. bind its catalog observation to the `value_equals` condition;
+3. run the same COMMIT/BLOCK cases against the real ComOS pre-execution catalog state.
 
 That keeps the Observer integration test focused on interoperability rather than simultaneously changing the EGA condition language.
