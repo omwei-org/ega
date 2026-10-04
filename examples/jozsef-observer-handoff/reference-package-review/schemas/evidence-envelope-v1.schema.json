@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextone.local/schemas/evidence-envelope-v1.schema.json",
+  "title": "NextOne Observer EvidenceEnvelope v1",
+  "description": "Evidence-only observation contract. An EvidenceEnvelope is an observation, never an authorization decision. See INV-01..INV-12.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_id",
+    "subject",
+    "target",
+    "observed_state",
+    "observed_value",
+    "observed_at",
+    "temporal_basis",
+    "provenance",
+    "uncertainty",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "nextone.observer.evidence-envelope/1.0"
+    },
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^ev1:[0-9a-f]{64}$",
+      "description": "Stable identifier of the observation object, not of any authorization decision. Deterministically derived as 'ev1:' + SHA-256 over the canonical identity payload (subject, target, observed_state, observed_value, observed_at, provenance); see docs/EVIDENCE_CONTRACT.md. Distinct from the integrity digest."
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource", "entity_id", "field"],
+      "properties": {
+        "resource": { "type": "string", "minLength": 1 },
+        "entity_id": { "type": "string", "minLength": 1 },
+        "field": { "type": "string", "minLength": 1 }
+      }
+    },
+    "observed_state": {
+      "enum": ["KNOWN", "UNKNOWN"],
+      "description": "Observation state only. No authorization semantics."
+    },
+    "observed_value": {
+      "description": "The observed catalog value. Required to be non-null iff observed_state is KNOWN. This is an observed value, never an authorized value."
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+      "description": "Semantically valid RFC 3339 / ISO 8601 date-time in the canonical UTC representation (Z suffix required, enforced by both the pattern and the active date-time format check; impossible calendar/time values such as month 13 or February 30 are rejected at schema validation, before integrity verification). Timestamp-validation refinement."
+    },
+    "temporal_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "timestamp_semantics", "clock"],
+      "properties": {
+        "type": { "const": "point_in_time" },
+        "timestamp_semantics": { "const": "observation_completed_at" },
+        "clock": { "const": "UTC" }
+      },
+      "description": "Evidence-only temporal meaning. MUST NOT contain FRESH, STALE, EGA freshness thresholds, max-age policy, or any authorization validity decision (INV-03)."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_kind", "collection_method", "source_locator"],
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "source_kind": { "type": "string", "minLength": 1 },
+        "collection_method": { "const": "read_only" },
+        "source_locator": { "type": "string", "minLength": 1 }
+      }
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_confidence", "confidence_semantics"],
+      "properties": {
+        "source_confidence": {
+          "description": "Source-supplied confidence, preserved as-is. null when the source supplies none; confidence is never invented."
+        },
+        "confidence_semantics": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Explains how to read source_confidence, e.g. 'not_supplied'."
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalization", "algorithm", "digest"],
+      "properties": {
+        "canonicalization": { "const": "nextone-canonical-json-v1" },
+        "algorithm": { "const": "sha256" },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "description": "Deterministic integrity reference over the canonicalized envelope payload excluding the integrity object (INV-07). Integrity is not authorization."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "observed_state": { "const": "KNOWN" } } },
+      "then": {
+        "properties": { "observed_value": { "type": ["integer", "number", "string", "boolean", "array", "object"] } }
+      }
+    },
+    {
+      "if": { "properties": { "observed_state": { "const": "UNKNOWN" } } },
+      "then": {
+        "properties": { "observed_value": { "type": "null" } }
+      }
+    }
+  ]
+}

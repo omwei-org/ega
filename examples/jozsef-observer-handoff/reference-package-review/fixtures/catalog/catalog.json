@@ -1,0 +1,32 @@
+{
+  "description": "Local deterministic catalog fixture for the interop reference. This is NOT real ComOS data and MUST NOT be labeled as such. Snapshots exist only to make fixture generation deterministic and source-read.",
+  "source_id": "local-catalog",
+  "locator_prefix": "catalog",
+  "snapshots": {
+    "current": {
+      "data": {
+        "T1": {
+          "SKU1": {
+            "price_cents": 2500
+          }
+        }
+      }
+    },
+    "prior": {
+      "provenance": {
+        "source_id": "local-catalog-alt",
+        "locator_prefix": "catalog-alt"
+      },
+      "data": {
+        "T1": {
+          "SKU1": {
+            "price_cents": 2600
+          }
+        }
+      }
+    },
+    "empty": {
+      "data": {}
+    }
+  }
+}

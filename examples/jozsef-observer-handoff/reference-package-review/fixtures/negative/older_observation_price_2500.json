@@ -1,0 +1,36 @@
+{
+  "evidence_id": "ev1:b10e81bcfd3d19b29114b4dad90c9c997df2196fcc145e4f8ecdf8dfb91fc159",
+  "integrity": {
+    "algorithm": "sha256",
+    "canonicalization": "nextone-canonical-json-v1",
+    "digest": "sha256:00455756827472867a7c5f4e35c837a68cb76c0308b3105c56e1532ebec32c5e"
+  },
+  "observed_at": "2026-10-01T09:00:00Z",
+  "observed_state": "KNOWN",
+  "observed_value": 2500,
+  "provenance": {
+    "collection_method": "read_only",
+    "source_id": "local-catalog",
+    "source_kind": "local_catalog",
+    "source_locator": "catalog/T1/SKU1/price_cents"
+  },
+  "schema_version": "nextone.observer.evidence-envelope/1.0",
+  "subject": {
+    "id": "T1",
+    "type": "tenant"
+  },
+  "target": {
+    "entity_id": "SKU1",
+    "field": "price_cents",
+    "resource": "catalog"
+  },
+  "temporal_basis": {
+    "clock": "UTC",
+    "timestamp_semantics": "observation_completed_at",
+    "type": "point_in_time"
+  },
+  "uncertainty": {
+    "confidence_semantics": "not_supplied",
+    "source_confidence": null
+  }
+}

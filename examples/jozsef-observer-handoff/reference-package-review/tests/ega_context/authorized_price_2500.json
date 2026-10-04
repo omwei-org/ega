@@ -1,0 +1,10 @@
+{
+  "description": "EGA-side evaluation context for LOCAL TESTS ONLY. This is independently established authorization data. It is NOT Observer evidence and must never be imported into EvidenceEnvelope generation (AT-13).",
+  "authorization_condition": {
+    "tenant_id": "T1",
+    "sku": "SKU1",
+    "field": "price_cents",
+    "authorized_value_cents": 2500,
+    "establishment": "independent_test_context"
+  }
+}
