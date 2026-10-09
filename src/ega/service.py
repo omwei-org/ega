@@ -25,7 +25,7 @@ Security features (v0.1.3):
 Security limitations (v0.1.3 - ARCHITECTURAL):
 - Revocation and replay protection are not implemented
 - Public keys must be provisioned out-of-band; no authority issuance or key rotation API
-- These require EGA core model changes, not service-layer changes
+- Revocation, replay protection, key rotation, and trusted context resolution remain unimplemented
 
 Configuration:
 - EGA_HOST: Bind address (default: 127.0.0.1)
