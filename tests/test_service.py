@@ -6,6 +6,8 @@ Tests service behavior, error handling, and intent-authority validation.
 """
 
 import os
+import base64
+import json
 import pytest
 from datetime import datetime, timezone, timedelta
 from hashlib import sha256
@@ -25,6 +27,8 @@ os.environ["EGA_FAIL_CLOSED"] = "false"
 os.environ["EGA_TRUSTED_AUTHORITY_IDS"] = ""
 
 from fastapi import HTTPException
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
 from fastapi.testclient import TestClient
 from ega.service import app, EvaluateRequest, RuntimeIntentRequest, ExecutionAuthorityRequest, Parameters, ItemsItem, EvidenceEnvelopeRequest
 
@@ -1135,9 +1139,8 @@ def test_error_messages_generic():
     # We can't easily trigger a ValueError without modifying EGA core
     # This test documents the expectation
 
-def test_unverified_authority_blocked_even_if_id_allowlisted():
-    """An ID whitelist must not be mistaken for cryptographic authentication."""
-    authority = ExecutionAuthority(
+def _authority_request_for_signature():
+    return ExecutionAuthorityRequest(
         authority_id="auth-001",
         principal="buyer-123",
         action="retail_sale",
@@ -1145,15 +1148,56 @@ def test_unverified_authority_blocked_even_if_id_allowlisted():
         parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
         environment="production",
         source_decision="decision-001",
+        status="VALID",
     )
-    previous_allow = service.ALLOW_UNVERIFIED_AUTHORITY
-    previous_ids = service.TRUSTED_AUTHORITY_IDS
-    try:
-        service.ALLOW_UNVERIFIED_AUTHORITY = False
-        service.TRUSTED_AUTHORITY_IDS = {"auth-001"}
-        with pytest.raises(HTTPException) as exc_info:
-            service._validate_authority_trust(authority)
-        assert exc_info.value.status_code == 503
-    finally:
-        service.ALLOW_UNVERIFIED_AUTHORITY = previous_allow
-        service.TRUSTED_AUTHORITY_IDS = previous_ids
+
+
+def _signed_authority_request(private_key):
+    authority = _authority_request_for_signature()
+    payload = authority.model_dump(exclude={"signature"}, mode="json")
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    signature = base64.b64encode(private_key.sign(canonical)).decode("ascii")
+    return authority.model_copy(update={"signature": signature})
+
+
+def test_unverified_authority_blocked_even_if_id_allowlisted(monkeypatch):
+    """An ID whitelist must not be mistaken for cryptographic authentication."""
+    monkeypatch.delenv("EGA_AUTHORITY_PUBLIC_KEYS_JSON", raising=False)
+    monkeypatch.setattr(service, "ALLOW_UNVERIFIED_AUTHORITY", False)
+    monkeypatch.setattr(service, "TRUSTED_AUTHORITY_IDS", {"auth-001"})
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_trust(_authority_request_for_signature())
+    assert exc_info.value.status_code == 503
+
+
+def test_valid_ed25519_authority_signature_is_accepted(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+    signed = _signed_authority_request(private_key)
+    service._validate_authority_trust(signed)
+
+
+def test_ed25519_signature_rejects_tampered_authority(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+    signed = _signed_authority_request(private_key)
+    tampered = signed.model_copy(update={"action": "payment_confirm"})
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_trust(tampered)
+    assert exc_info.value.status_code == 403
