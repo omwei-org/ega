@@ -10,7 +10,7 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.2):
+Security features (v0.1.2.2):
 - Trusted authority whitelist (fail-closed by default)
 - AEE conditions require Observer v1 evidence or block
 - Evidence converted using existing observer_v1_envelope_to_evidence()
@@ -20,7 +20,7 @@ Security features (v0.1.2):
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.2 - ARCHITECTURAL):
+Security limitations (v0.1.2.2 - ARCHITECTURAL):
 - No cryptographic signature verification (not in EGA models)
 - No authority expiry/revocation (not in EGA models)
 - No replay protection (not in EGA models)
@@ -64,6 +64,9 @@ TRUSTED_AUTHORITY_IDS: Set[str] = set(
     os.getenv("EGA_TRUSTED_AUTHORITY_IDS", "").split(",") if os.getenv("EGA_TRUSTED_AUTHORITY_IDS") else []
 )
 FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = os.getenv("EGA_FAIL_CLOSED", "true").lower() == "true"
+# The HTTP request carries caller-supplied authority fields; an ID whitelist
+# does not authenticate those fields. Unsafe model/demo mode must be explicit.
+ALLOW_UNVERIFIED_AUTHORITY = os.getenv("EGA_ALLOW_UNVERIFIED_AUTHORITY", "false").lower() == "true
 MAX_CONTEXT_AGE_SECONDS = int(os.getenv("EGA_MAX_CONTEXT_AGE_SECONDS", "300"))  # 5 minutes default
 
 
@@ -157,7 +160,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.0"
+    version="0.1.2.2"
 )
 
 
@@ -277,27 +280,37 @@ def _validate_authority_trust(authority: ExecutionAuthority) -> None:
     This whitelist-based approach is a fallback until signature fields are added
     to ExecutionAuthority model.
     """
-    if not TRUSTED_AUTHORITY_IDS:
-        if FAIL_CLOSED_ON_UNKNOWN_AUTHORITY:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Authority '{authority.authority_id}' not in trusted whitelist and fail-closed mode is enabled. "
-                        f"Set EGA_TRUSTED_AUTHORITY_IDS or set EGA_FAIL_CLOSED=false for testing."
-            )
-        # Fail-open mode for testing - log warning but allow
-        import warnings
-        warnings.warn(
-            f"EGA_TRUSTED_AUTHORITY_IDS is empty and EGA_FAIL_CLOSED=false. "
-            f"Accepting authority '{authority.authority_id}' in unsafe mode. "
-            f"This is suitable for testing only."
+    # This endpoint receives the authority object from the caller. A matching ID
+    # is not proof that the authority fields were issued by a trusted authority.
+    # Until a signature verifier or trusted authority resolver is implemented,
+    # production evaluation must fail closed even when an ID is allowlisted.
+    if not ALLOW_UNVERIFIED_AUTHORITY:
+        raise HTTPException(
+            status_code=503,
+            detail="Authority authenticity verification is not configured; evaluation is disabled"
         )
-        return
 
-    if authority.authority_id not in TRUSTED_AUTHORITY_IDS:
+    # Explicitly unsafe test/demo mode only. The optional ID list still filters
+    # identifiers but does not authenticate the authority payload.
+    if TRUSTED_AUTHORITY_IDS and authority.authority_id not in TRUSTED_AUTHORITY_IDS:
         raise HTTPException(
             status_code=403,
-            detail=f"Authority '{authority.authority_id}' not in trusted whitelist"
+            detail="Authority ID is not in the configured test whitelist"
         )
+
+    if not TRUSTED_AUTHORITY_IDS and FAIL_CLOSED_ON_UNKNOWN_AUTHORITY:
+        raise HTTPException(
+            status_code=403,
+            detail="No authority IDs configured for unsafe test mode"
+        )
+
+    import warnings
+    warnings.warn(
+        "EGA_ALLOW_UNVERIFIED_AUTHORITY=true: accepting caller-supplied, "
+        "cryptographically unverified authority. TEST/DEMO ONLY.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 
 def _convert_evidence_envelopes(
@@ -444,7 +457,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.0"}
+    return {"status": "healthy", "version": "0.1.2.2"}
 
 
 def run_server(host: str = None, port: int = None):
