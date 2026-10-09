@@ -371,13 +371,18 @@ async def evaluate(request: EvaluateRequest):
         # Security check 2: validate intent-authority match
         _validate_intent_authority_match(intent, authority)
 
-        # Security check 3: context freshness (use system time for current_epoch)
-        current_epoch = int(time.time())
-        context_age = current_epoch - request.context_epoch
+        # Security check 3: context freshness (wall-clock check, separate from epoch semantics)
+        current_system_time = int(time.time())
+        context_age = current_system_time - request.context_epoch
         if context_age > MAX_CONTEXT_AGE_SECONDS:
             raise HTTPException(
                 status_code=400,
                 detail=f"Context epoch is stale (age: {context_age}s, max: {MAX_CONTEXT_AGE_SECONDS}s)"
+            )
+        if context_age < -MAX_CONTEXT_AGE_SECONDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Context epoch is in the future (age: {context_age}s, max skew: {MAX_CONTEXT_AGE_SECONDS}s)"
             )
 
         # Use existing EGA boundary functions
@@ -399,18 +404,19 @@ async def evaluate(request: EvaluateRequest):
             # No AEE conditions but evidence provided - convert but don't use
             current_evidence = None
 
-        # Final authority check
+        # Final authority check: use prepared.context_epoch for epoch/version semantics
+        # The wall-clock freshness check was done separately above
         reason = final_authority_check(
             prepared,
-            current_epoch,  # Use system time for current_epoch
+            prepared.context_epoch,  # Use prepared epoch for epoch/version semantics
             current_authority=None,  # Not checking for authority changes in v0.1.2
             current_evidence=current_evidence
         )
 
-        # Commit decision
+        # Commit decision: use prepared.context_epoch for epoch/version semantics
         result = commit(
             prepared,
-            current_epoch,  # Use system time for current_epoch
+            prepared.context_epoch,  # Use prepared epoch for epoch/version semantics
             current_evidence=current_evidence
         )
 

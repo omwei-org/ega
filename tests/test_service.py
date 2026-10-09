@@ -941,6 +941,131 @@ def test_malformed_evidence_envelope_blocks():
     assert "integrity" in response.json()["detail"].lower() or "digest" in response.json()["detail"].lower()
 
 
+def test_context_age_valid_wallclock_changes():
+    """Context age is valid but wall-clock second changes during evaluation (v0.1.2.1 fix)."""
+    # This test verifies that the context epoch is used for epoch/version semantics
+    # while wall-clock freshness is checked separately
+    current_time = int(datetime.now(timezone.utc).timestamp())
+    # Context is fresh (within MAX_CONTEXT_AGE_SECONDS)
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001"
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID"
+        ),
+        context_epoch=current_time  # Fresh context
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2.1: should succeed because context epoch is used for epoch/version semantics
+    # Wall-clock freshness check passed (context is fresh)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "COMMIT"
+
+
+def test_future_dated_evidence_rejected():
+    """Future-dated evidence is rejected (v0.1.2.1 fix)."""
+    from datetime import timedelta
+    future_time = datetime.now(timezone.utc) + timedelta(minutes=10)
+    future_envelope = _golden_observer_envelope().copy()
+    future_envelope["observed_at"] = future_time.isoformat()
+    # Recompute evidence_id and integrity for future timestamp
+    future_envelope["evidence_id"] = _derive_observer_v1_evidence_id(
+        subject=future_envelope["subject"],
+        target=future_envelope["target"],
+        observed_state=future_envelope["observed_state"],
+        observed_value=future_envelope["observed_value"],
+        observed_at=future_envelope["observed_at"],
+        provenance=future_envelope["provenance"],
+    )
+    covered = {k: v for k, v in future_envelope.items() if k != "integrity"}
+    digest = sha256(_canonicalize_nextone_v1(covered)).hexdigest()
+    future_envelope["integrity"]["digest"] = f"sha256:{digest}"
+
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001",
+            evidence_envelopes=[EvidenceEnvelopeRequest(**future_envelope)]
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID",
+            aee_conditions=[
+                {
+                    "condition_id": "cond-001",
+                    "evidence_ref": future_envelope["evidence_id"],
+                    "state_equals": "KNOWN"
+                }
+            ]
+        ),
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2.1: future-dated evidence should be rejected
+    assert response.status_code == 400
+    assert "future" in response.json()["detail"].lower()
+
+
+def test_context_epoch_future_rejected():
+    """Future-dated context epoch is rejected (v0.1.2.1 fix)."""
+    from datetime import timedelta
+    current_time = int(datetime.now(timezone.utc).timestamp())
+    future_time = current_time + 600  # 10 minutes in the future
+
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001"
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID"
+        ),
+        context_epoch=future_time
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2.1: future context should be rejected
+    assert response.status_code == 400
+    assert "future" in response.json()["detail"].lower()
+
+
 def test_no_aee_conditions_evidence_optional():
     """Without AEE conditions, evidence is optional."""
     current_time = int(datetime.now(timezone.utc).timestamp())

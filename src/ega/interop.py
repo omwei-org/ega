@@ -114,14 +114,24 @@ def evidence_envelope_to_evidence(
     )
 
 
-def _compute_freshness_from_observed_at(observed_at: str, max_age_seconds: int) -> str:
+def _compute_freshness_from_observed_at(observed_at: str, max_age_seconds: int, clock_skew_allowance_seconds: int = 5) -> str:
     """Compute FRESH/STALE from observed_at and EGA's freshness threshold.
 
     Observer EvidenceEnvelope v1 does not include freshness (INV-03).
     EGA evaluates freshness at evaluation time using the observation timestamp.
+
+    Rejects future-dated evidence beyond clock_skew_allowance_seconds.
     """
     obs_time = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
     age_seconds = (datetime.now(timezone.utc) - obs_time).total_seconds()
+    
+    # Reject future-dated evidence beyond clock skew allowance
+    if age_seconds < -clock_skew_allowance_seconds:
+        raise ValueError(
+            f"Evidence timestamp is in the future (age: {age_seconds}s, "
+            f"clock skew allowance: {clock_skew_allowance_seconds}s)"
+        )
+    
     return "FRESH" if age_seconds <= max_age_seconds else "STALE"
 
 
