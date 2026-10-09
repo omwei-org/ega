@@ -103,7 +103,7 @@ def test_health_check():
     """Health check endpoint works."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "version": "0.1.3"}
+    assert response.json() == {"status": "healthy", "version": "0.1.4"}
 
 
 def test_evaluate_valid_authority():
