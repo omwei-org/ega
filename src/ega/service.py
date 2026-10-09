@@ -177,7 +177,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.3"
+    version="0.1.4"
 )
 
 
