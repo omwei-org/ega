@@ -293,21 +293,23 @@ def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> N
             raise HTTPException(status_code=403, detail="Authority signature is missing or untrusted")
 
         try:
+            from cryptography.exceptions import InvalidSignature
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        except ImportError:
+            raise HTTPException(status_code=503, detail="Ed25519 verification dependency is unavailable")
+
+        try:
             public_key_bytes = base64.b64decode(encoded_key, validate=True)
             signature_bytes = base64.b64decode(authority_request.signature, validate=True)
             payload = authority_request.model_dump(exclude={"signature"}, mode="json")
             canonical_payload = json.dumps(
                 payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
             ).encode("utf-8")
-            from cryptography.exceptions import InvalidSignature
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
             if len(public_key_bytes) != 32:
                 raise ValueError("invalid Ed25519 public key length")
             Ed25519PublicKey.from_public_bytes(public_key_bytes).verify(
                 signature_bytes, canonical_payload
             )
-        except ImportError:
-            raise HTTPException(status_code=503, detail="Ed25519 verification dependency is unavailable")
         except (ValueError, binascii.Error, InvalidSignature):
             raise HTTPException(status_code=403, detail="Authority signature verification failed")
         return
