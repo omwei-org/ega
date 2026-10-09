@@ -8,6 +8,7 @@ Tests service behavior, error handling, and intent-authority validation.
 import os
 import base64
 import json
+import uuid
 import pytest
 from datetime import datetime, timezone, timedelta
 from hashlib import sha256
@@ -1139,7 +1140,7 @@ def test_error_messages_generic():
     # We can't easily trigger a ValueError without modifying EGA core
     # This test documents the expectation
 
-def _authority_request_for_signature(issued_at=None, expires_at=None, audience="ega-service"):
+def _authority_request_for_signature(issued_at=None, expires_at=None, audience="ega-service", nonce=None):
     now = datetime.now(timezone.utc)
     return ExecutionAuthorityRequest(
         authority_id="auth-001",
@@ -1150,6 +1151,7 @@ def _authority_request_for_signature(issued_at=None, expires_at=None, audience="
         environment="production",
         source_decision="decision-001",
         status="VALID",
+        nonce=nonce or uuid.uuid4().hex + uuid.uuid4().hex,
         issued_at=issued_at or now,
         expires_at=expires_at or now + timedelta(seconds=120),
         audience=audience,
@@ -1283,3 +1285,34 @@ def test_overlong_ed25519_authority_lifetime_is_rejected(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         service._validate_authority_trust(_signed_authority_request(private_key, overlong))
     assert exc_info.value.status_code == 403
+
+
+
+def test_authority_nonce_cannot_be_reused(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "REPLAY_DB_PATH", str(tmp_path / "replay.sqlite3"))
+    expires = datetime.now(timezone.utc) + timedelta(minutes=2)
+    service._claim_authority_nonce("auth-001", "nonce-0123456789abcdef", expires)
+    with pytest.raises(HTTPException) as exc_info:
+        service._claim_authority_nonce("auth-001", "nonce-0123456789abcdef", expires)
+    assert exc_info.value.status_code == 409
+
+
+def test_replay_ledger_allows_distinct_nonces(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "REPLAY_DB_PATH", str(tmp_path / "replay.sqlite3"))
+    expires = datetime.now(timezone.utc) + timedelta(minutes=2)
+    service._claim_authority_nonce("auth-001", "nonce-0123456789abcdef-A", expires)
+    service._claim_authority_nonce("auth-001", "nonce-0123456789abcdef-B", expires)
+
+
+def test_replay_ledger_fails_closed_when_storage_unavailable(tmp_path, monkeypatch):
+    # Use a directory as the database path so SQLite cannot open it as a file.
+    db_directory = tmp_path / "is-a-directory"
+    db_directory.mkdir()
+    monkeypatch.setattr(service, "REPLAY_DB_PATH", str(db_directory))
+    with pytest.raises(HTTPException) as exc_info:
+        service._claim_authority_nonce(
+            "auth-001",
+            "nonce-0123456789abcdef",
+            datetime.now(timezone.utc) + timedelta(minutes=2),
+        )
+    assert exc_info.value.status_code == 503
