@@ -1316,3 +1316,31 @@ def test_replay_ledger_fails_closed_when_storage_unavailable(tmp_path, monkeypat
             datetime.now(timezone.utc) + timedelta(minutes=2),
         )
     assert exc_info.value.status_code == 503
+
+
+
+def test_expired_authority_cannot_be_claimed_in_replay_ledger(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "REPLAY_DB_PATH", str(tmp_path / "replay.sqlite3"))
+    with pytest.raises(HTTPException) as exc_info:
+        service._claim_authority_nonce(
+            "auth-001",
+            "nonce-0123456789abcdef",
+            datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+    assert exc_info.value.status_code == 403
+
+
+def test_signed_authority_without_nonce_is_rejected(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+    authority = _authority_request_for_signature(nonce=None).model_copy(update={"nonce": None})
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_trust(_signed_authority_request(private_key, authority))
+    assert exc_info.value.status_code == 403
