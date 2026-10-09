@@ -31,15 +31,16 @@ Configuration:
 - EGA_HOST: Bind address (default: 127.0.0.1)
 - EGA_PORT: Port (default: 8000)
 - EGA_TRUSTED_AUTHORITY_IDS: Comma-separated list of trusted authority IDs (default: empty)
-- EGA_FAIL_CLOSED: If true, reject authorities not in whitelist (default: true)
+- EGA_FAIL_CLOSED: Reject unknown IDs in unsafe test mode (default: true)
+- EGA_ALLOW_UNVERIFIED_AUTHORITY: Explicitly unsafe test/demo bypass (default: false)
 - EGA_MAX_CONTEXT_AGE_SECONDS: Max allowed age for context epoch (default: 300)
 
 Usage:
-  # Production mode (fail-closed, requires whitelist)
-  EGA_TRUSTED_AUTHORITY_IDS=auth-001,auth-002 python3 -m ega.service
+  # Default: evaluation remains disabled until authority authenticity verification exists
+  python3 -m ega.service
 
-  # Test mode (fail-open, for testing only)
-  EGA_FAIL_CLOSED=false python3 -m ega.service
+  # UNSAFE model/demo mode only; never use with real ComOS or production traffic
+  EGA_FAIL_CLOSED=false EGA_ALLOW_UNVERIFIED_AUTHORITY=true python3 -m ega.service
 """
 
 from __future__ import annotations
@@ -268,17 +269,10 @@ def _validate_authority_trust(authority: ExecutionAuthority) -> None:
     """
     Validate that the authority is from a trusted source.
 
-    This uses a whitelist of trusted authority IDs. If the whitelist is empty
-    and FAIL_CLOSED_ON_UNKNOWN_AUTHORITY is true, all authorities are rejected.
-    If the whitelist is empty and FAIL_CLOSED_ON_UNKNOWN_AUTHORITY is false,
-    the service operates in unsafe mode (for testing only).
-
-    This is a minimal trust mechanism for v0.1.2. Production should use
-    cryptographic signature verification or lookup from a trusted governance system.
-
-    ARCHITECTURAL LIMITATION: EGA models do not support signature verification.
-    This whitelist-based approach is a fallback until signature fields are added
-    to ExecutionAuthority model.
+    Caller-supplied authority fields are not authenticated by an authority ID
+    whitelist. The endpoint therefore rejects all evaluation by default until
+    a cryptographic verifier or trusted authority resolver is implemented.
+    ALLOW_UNVERIFIED_AUTHORITY is an explicit unsafe switch for tests/demos only.
     """
     # This endpoint receives the authority object from the caller. A matching ID
     # is not proof that the authority fields were issued by a trusted authority.
