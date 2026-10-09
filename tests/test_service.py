@@ -1139,7 +1139,8 @@ def test_error_messages_generic():
     # We can't easily trigger a ValueError without modifying EGA core
     # This test documents the expectation
 
-def _authority_request_for_signature():
+def _authority_request_for_signature(issued_at=None, expires_at=None, audience="ega-service"):
+    now = datetime.now(timezone.utc)
     return ExecutionAuthorityRequest(
         authority_id="auth-001",
         principal="buyer-123",
@@ -1149,11 +1150,14 @@ def _authority_request_for_signature():
         environment="production",
         source_decision="decision-001",
         status="VALID",
+        issued_at=issued_at or now,
+        expires_at=expires_at or now + timedelta(seconds=120),
+        audience=audience,
     )
 
 
-def _signed_authority_request(private_key):
-    authority = _authority_request_for_signature()
+def _signed_authority_request(private_key, authority=None):
+    authority = authority or _authority_request_for_signature()
     payload = authority.model_dump(exclude={"signature"}, mode="json")
     canonical = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -1200,4 +1204,41 @@ def test_ed25519_signature_rejects_tampered_authority(monkeypatch):
     tampered = signed.model_copy(update={"action": "payment_confirm"})
     with pytest.raises(HTTPException) as exc_info:
         service._validate_authority_trust(tampered)
+    assert exc_info.value.status_code == 403
+
+
+
+def test_expired_ed25519_authority_is_rejected(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+    now = datetime.now(timezone.utc)
+    expired = _authority_request_for_signature(
+        issued_at=now - timedelta(minutes=10),
+        expires_at=now - timedelta(minutes=5),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_trust(_signed_authority_request(private_key, expired))
+    assert exc_info.value.status_code == 403
+
+
+def test_wrong_audience_ed25519_authority_is_rejected(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+    wrong_audience = _authority_request_for_signature(audience="other-service")
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_trust(_signed_authority_request(private_key, wrong_audience))
     assert exc_info.value.status_code == 403
