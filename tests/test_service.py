@@ -6,6 +6,7 @@ Tests service behavior, error handling, and intent-authority validation.
 """
 
 import os
+import pytest
 from datetime import datetime, timezone, timedelta
 from hashlib import sha256
 import json
@@ -23,6 +24,7 @@ from ega.interop import (
 os.environ["EGA_FAIL_CLOSED"] = "false"
 os.environ["EGA_TRUSTED_AUTHORITY_IDS"] = ""
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from ega.service import app, EvaluateRequest, RuntimeIntentRequest, ExecutionAuthorityRequest, Parameters, ItemsItem, EvidenceEnvelopeRequest
 
@@ -30,6 +32,7 @@ from ega.service import app, EvaluateRequest, RuntimeIntentRequest, ExecutionAut
 from ega import service
 service.TRUSTED_AUTHORITY_IDS = set()
 service.FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = False
+service.ALLOW_UNVERIFIED_AUTHORITY = True  # Explicitly unsafe mode for model/service tests
 
 # Test client
 client = TestClient(app)
@@ -95,7 +98,7 @@ def test_health_check():
     """Health check endpoint works."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "version": "0.1.0"}
+    assert response.json() == {"status": "healthy", "version": "0.1.2.2"}
 
 
 def test_evaluate_valid_authority():
@@ -1131,3 +1134,26 @@ def test_error_messages_generic():
     # If it failed, error message should be generic
     # We can't easily trigger a ValueError without modifying EGA core
     # This test documents the expectation
+
+def test_unverified_authority_blocked_even_if_id_allowlisted():
+    """An ID whitelist must not be mistaken for cryptographic authentication."""
+    authority = ExecutionAuthority(
+        authority_id="auth-001",
+        principal="buyer-123",
+        action="retail_sale",
+        target="tenant-456",
+        parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+        environment="production",
+        source_decision="decision-001",
+    )
+    previous_allow = service.ALLOW_UNVERIFIED_AUTHORITY
+    previous_ids = service.TRUSTED_AUTHORITY_IDS
+    try:
+        service.ALLOW_UNVERIFIED_AUTHORITY = False
+        service.TRUSTED_AUTHORITY_IDS = {"auth-001"}
+        with pytest.raises(HTTPException) as exc_info:
+            service._validate_authority_trust(authority)
+        assert exc_info.value.status_code == 503
+    finally:
+        service.ALLOW_UNVERIFIED_AUTHORITY = previous_allow
+        service.TRUSTED_AUTHORITY_IDS = previous_ids
