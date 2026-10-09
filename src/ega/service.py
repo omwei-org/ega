@@ -11,7 +11,8 @@ Architecture:
 - Rejects malformed/invalid authority
 
 Security features (v0.1.2.2):
-- Evaluation disabled by default until authority authenticity can be verified
+- Ed25519 authority signatures verified against configured trusted public keys
+- Evaluation disabled by default when no trusted verification keys are configured
 - AEE conditions require Observer v1 evidence or block
 - Evidence converted using existing observer_v1_envelope_to_evidence()
 - AEE conditions evaluated against converted evidence
@@ -21,18 +22,18 @@ Security features (v0.1.2.2):
 - HTTP authentication not implemented (requires network security layer)
 
 Security limitations (v0.1.2.2 - ARCHITECTURAL):
-- No cryptographic signature verification (therefore HTTP evaluation is disabled by default)
+- Authority expiry/revocation and replay protection are not implemented
 - No authority expiry/revocation (not in EGA models)
 - No replay protection (not in EGA models)
-- Authority retrieval from trusted governance system not implemented; ID allowlists are not authentication
+- Public keys must be provisioned out-of-band; no authority issuance or key rotation API
 - These require EGA core model changes, not service-layer changes
 
 Configuration:
 - EGA_HOST: Bind address (default: 127.0.0.1)
 - EGA_PORT: Port (default: 8000)
-- EGA_TRUSTED_AUTHORITY_IDS: Comma-separated list of trusted authority IDs (default: empty)
+- EGA_AUTHORITY_PUBLIC_KEYS_JSON: JSON map of authority IDs to base64 raw Ed25519 public keys (default: empty)
 - EGA_FAIL_CLOSED: Reject unknown IDs in unsafe test mode (default: true)
-- EGA_ALLOW_UNVERIFIED_AUTHORITY: Explicitly unsafe test/demo bypass (default: false)
+- EGA_ALLOW_UNVERIFIED_AUTHORITY: Explicitly unsafe test/demo bypass if no keys are configured (default: false)
 - EGA_MAX_CONTEXT_AGE_SECONDS: Max allowed age for context epoch (default: 300)
 
 Usage:
@@ -128,6 +129,7 @@ class ExecutionAuthorityRequest(BaseModel):
     parameters: Dict[str, Any]
     environment: str = Field(..., min_length=1)
     source_decision: str = Field(..., min_length=1)
+    signature: Optional[str] = None  # Base64 Ed25519 signature over canonical authority fields
     governance_context: Optional[Dict[str, Any]] = None
     evidence: Optional[Dict[str, Any]] = None
     status: str = "VALID"
@@ -265,38 +267,62 @@ def _validate_intent_authority_match(intent: RuntimeIntent, authority: Execution
         )
 
 
-def _validate_authority_trust(authority: ExecutionAuthority) -> None:
+def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> None:
     """
-    Validate that the authority is from a trusted source.
+    Verify the Ed25519 signature over canonical authority fields.
 
-    Caller-supplied authority fields are not authenticated by an authority ID
-    whitelist. The endpoint therefore rejects all evaluation by default until
-    a cryptographic verifier or trusted authority resolver is implemented.
-    ALLOW_UNVERIFIED_AUTHORITY is an explicit unsafe switch for tests/demos only.
+    EGA_AUTHORITY_PUBLIC_KEYS_JSON maps authority IDs to base64-encoded raw
+    32-byte Ed25519 public keys. The signature is base64-encoded and covers
+    every authority request field except the signature itself.
     """
-    # This endpoint receives the authority object from the caller. A matching ID
-    # is not proof that the authority fields were issued by a trusted authority.
-    # Until a signature verifier or trusted authority resolver is implemented,
-    # production evaluation must fail closed even when an ID is allowlisted.
+    import base64
+    import binascii
+    import json
+
+    raw_keys = os.getenv("EGA_AUTHORITY_PUBLIC_KEYS_JSON", "")
+    if raw_keys:
+        try:
+            keys = json.loads(raw_keys)
+        except (TypeError, json.JSONDecodeError):
+            raise HTTPException(status_code=503, detail="Authority verification is misconfigured")
+        if not isinstance(keys, dict):
+            raise HTTPException(status_code=503, detail="Authority verification is misconfigured")
+
+        encoded_key = keys.get(authority_request.authority_id)
+        if not isinstance(encoded_key, str) or not authority_request.signature:
+            raise HTTPException(status_code=403, detail="Authority signature is missing or untrusted")
+
+        try:
+            public_key_bytes = base64.b64decode(encoded_key, validate=True)
+            signature_bytes = base64.b64decode(authority_request.signature, validate=True)
+            payload = authority_request.model_dump(exclude={"signature"}, mode="json")
+            canonical_payload = json.dumps(
+                payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode("utf-8")
+            from cryptography.exceptions import InvalidSignature
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            if len(public_key_bytes) != 32:
+                raise ValueError("invalid Ed25519 public key length")
+            Ed25519PublicKey.from_public_bytes(public_key_bytes).verify(
+                signature_bytes, canonical_payload
+            )
+        except ImportError:
+            raise HTTPException(status_code=503, detail="Ed25519 verification dependency is unavailable")
+        except (ValueError, binascii.Error, InvalidSignature):
+            raise HTTPException(status_code=403, detail="Authority signature verification failed")
+        return
+
     if not ALLOW_UNVERIFIED_AUTHORITY:
         raise HTTPException(
             status_code=503,
-            detail="Authority authenticity verification is not configured; evaluation is disabled"
+            detail="Authority verification keys are not configured; evaluation is disabled"
         )
 
-    # Explicitly unsafe test/demo mode only. The optional ID list still filters
-    # identifiers but does not authenticate the authority payload.
-    if TRUSTED_AUTHORITY_IDS and authority.authority_id not in TRUSTED_AUTHORITY_IDS:
-        raise HTTPException(
-            status_code=403,
-            detail="Authority ID is not in the configured test whitelist"
-        )
-
+    # Explicitly unsafe model/demo mode only.
+    if TRUSTED_AUTHORITY_IDS and authority_request.authority_id not in TRUSTED_AUTHORITY_IDS:
+        raise HTTPException(status_code=403, detail="Authority ID is not in the configured test whitelist")
     if not TRUSTED_AUTHORITY_IDS and FAIL_CLOSED_ON_UNKNOWN_AUTHORITY:
-        raise HTTPException(
-            status_code=403,
-            detail="No authority IDs configured for unsafe test mode"
-        )
+        raise HTTPException(status_code=403, detail="No authority IDs configured for unsafe test mode")
 
     import warnings
     warnings.warn(
@@ -375,7 +401,7 @@ async def evaluate(request: EvaluateRequest):
         authority = _convert_authority(request.authority)
 
         # Security check 1: validate authority trust (whitelist)
-        _validate_authority_trust(authority)
+        _validate_authority_trust(request.authority)
 
         # Security check 2: validate intent-authority match
         _validate_intent_authority_match(intent, authority)
