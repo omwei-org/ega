@@ -479,7 +479,7 @@ async def evaluate(request: EvaluateRequest):
         intent = _convert_intent(request.intent)
         authority = _convert_authority(request.authority)
 
-        # Security check 1: validate authority trust (whitelist)
+        # Security check 1: verify signed authority authenticity and validity
         _validate_authority_trust(request.authority)
 
         # Security check 2: validate intent-authority match
@@ -564,7 +564,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.3"}
+    return {"status": "healthy", "version": "0.1.4"}
 
 
 def run_server(host: str = None, port: int = None):
