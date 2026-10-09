@@ -1242,3 +1242,44 @@ def test_wrong_audience_ed25519_authority_is_rejected(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         service._validate_authority_trust(_signed_authority_request(private_key, wrong_audience))
     assert exc_info.value.status_code == 403
+
+
+
+def test_future_issued_ed25519_authority_is_rejected(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+    now = datetime.now(timezone.utc)
+    future = _authority_request_for_signature(
+        issued_at=now + timedelta(minutes=2),
+        expires_at=now + timedelta(minutes=3),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_trust(_signed_authority_request(private_key, future))
+    assert exc_info.value.status_code == 403
+
+
+def test_overlong_ed25519_authority_lifetime_is_rejected(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+    now = datetime.now(timezone.utc)
+    overlong = _authority_request_for_signature(
+        issued_at=now,
+        expires_at=now + timedelta(minutes=10),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_trust(_signed_authority_request(private_key, overlong))
+    assert exc_info.value.status_code == 403
