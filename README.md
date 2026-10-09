@@ -84,7 +84,7 @@ Runtime AI Governance → EGA → EABC → Enforcement Boundary → EFFECT
 The repository contains a minimal deterministic Python model of the EGA step.
 
 ```bash
-python -m pip install -e ".[test]"
+python -m pip install -e ".[test,service]"
 pytest -q
 ```
 
@@ -112,3 +112,16 @@ See:
 ## Related work
 
 - EABC: https://github.com/omwei-org/omwei-eabc
+
+## HTTP service authority verification
+
+The optional HTTP service is a reference implementation, not a production deployment. By default, `POST /v1/evaluate` fails closed unless an Ed25519 public key is provisioned for the submitted `authority_id`.
+
+Configure `EGA_AUTHORITY_PUBLIC_KEYS_JSON` as a JSON object mapping authority IDs to base64-encoded raw 32-byte Ed25519 public keys. The request's `authority.signature` must be base64-encoded Ed25519 over the canonical UTF-8 JSON serialization of the complete `authority` object excluding `signature`, using sorted keys, compact separators (`,` and `:`), and `ensure_ascii=False`. The signer and verifier must use the same request schema and canonicalization.
+
+Example key-map shape (replace the placeholder with a real public key):
+```json
+{"authority-id": "BASE64_RAW_ED25519_PUBLIC_KEY"}
+```
+
+Do not enable `EGA_ALLOW_UNVERIFIED_AUTHORITY=true` outside isolated tests/demos. That switch bypasses signature verification when no key map is configured. The current service does not implement authority expiry/revocation, replay protection, key rotation, client authentication, or a trusted live context-version provider. Signature verification authenticates the signed authority payload against the provisioned key; it does not by itself establish that the authority is current or that the execution boundary enforces the resulting decision.
