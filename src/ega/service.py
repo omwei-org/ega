@@ -10,7 +10,7 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.2.2):
+Security features (v0.1.3):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Evaluation disabled by default when no trusted verification keys are configured
 - AEE conditions require Observer v1 evidence or block
@@ -21,7 +21,7 @@ Security features (v0.1.2.2):
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.2.2 - ARCHITECTURAL):
+Security limitations (v0.1.3 - ARCHITECTURAL):
 - Authority expiry/revocation and replay protection are not implemented
 - No authority expiry/revocation (not in EGA models)
 - No replay protection (not in EGA models)
@@ -163,7 +163,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.2.2"
+    version="0.1.3"
 )
 
 
@@ -479,7 +479,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.2.2"}
+    return {"status": "healthy", "version": "0.1.3"}
 
 
 def run_server(host: str = None, port: int = None):
