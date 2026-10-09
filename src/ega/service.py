@@ -56,6 +56,7 @@ import uvicorn
 import os
 import time
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -385,7 +386,7 @@ def _claim_authority_nonce(authority_id: str, nonce: str, expires_at: datetime) 
     try:
         if str(db_path.parent) not in ("", "."):
             db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(str(db_path), timeout=5.0, isolation_level=None) as conn:
+        with closing(sqlite3.connect(str(db_path), timeout=5.0, isolation_level=None)) as conn:
             conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("""CREATE TABLE IF NOT EXISTS consumed_authority_nonces (
                 authority_id TEXT NOT NULL,
