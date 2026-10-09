@@ -11,7 +11,7 @@ Architecture:
 - Rejects malformed/invalid authority
 
 Security features (v0.1.3):
-- Ed25519 authority signatures verified against configured trusted public keys
+- Ed25519 authority signatures verified against configured trusted public keys\n- Signed authorities require an expiry interval and matching service audience
 - Evaluation disabled by default when no trusted verification keys are configured
 - AEE conditions require Observer v1 evidence or block
 - Evidence converted using existing observer_v1_envelope_to_evidence()
@@ -23,7 +23,7 @@ Security features (v0.1.3):
 
 Security limitations (v0.1.3 - ARCHITECTURAL):
 - Authority expiry/revocation and replay protection are not implemented
-- No authority expiry/revocation (not in EGA models)
+- Revocation and replay protection are not implemented
 - No replay protection (not in EGA models)
 - Public keys must be provisioned out-of-band; no authority issuance or key rotation API
 - These require EGA core model changes, not service-layer changes
@@ -34,7 +34,7 @@ Configuration:
 - EGA_AUTHORITY_PUBLIC_KEYS_JSON: JSON map of authority IDs to base64 raw Ed25519 public keys (default: empty)
 - EGA_FAIL_CLOSED: Reject unknown IDs in unsafe test mode (default: true)
 - EGA_ALLOW_UNVERIFIED_AUTHORITY: Explicitly unsafe test/demo bypass if no keys are configured (default: false)
-- EGA_MAX_CONTEXT_AGE_SECONDS: Max allowed age for context epoch (default: 300)
+- EGA_MAX_CONTEXT_AGE_SECONDS: Max allowed age for context epoch (default: 300)\n- EGA_MAX_AUTHORITY_TTL_SECONDS: Maximum signed authority lifetime (default: 300)\n- EGA_AUTHORITY_CLOCK_SKEW_SECONDS: Allowed future issue-time skew (default: 5)\n- EGA_SERVICE_AUDIENCE: Required authority audience (default: ega-service)
 
 Usage:
   # Default: evaluation remains disabled until authority authenticity verification exists
@@ -52,6 +52,7 @@ from pydantic import BaseModel, Field, field_validator
 import uvicorn
 import os
 import time
+from datetime import datetime, timezone
 
 from .models import RuntimeIntent, ExecutionAuthority, EvidenceItem
 from .boundary import prepare, final_authority_check, commit
@@ -70,6 +71,9 @@ FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = os.getenv("EGA_FAIL_CLOSED", "true").lower() 
 # does not authenticate those fields. Unsafe model/demo mode must be explicit.
 ALLOW_UNVERIFIED_AUTHORITY = os.getenv("EGA_ALLOW_UNVERIFIED_AUTHORITY", "false").lower() == "true"
 MAX_CONTEXT_AGE_SECONDS = int(os.getenv("EGA_MAX_CONTEXT_AGE_SECONDS", "300"))  # 5 minutes default
+MAX_AUTHORITY_TTL_SECONDS = int(os.getenv("EGA_MAX_AUTHORITY_TTL_SECONDS", "300"))
+AUTHORITY_CLOCK_SKEW_SECONDS = int(os.getenv("EGA_AUTHORITY_CLOCK_SKEW_SECONDS", "5"))
+SERVICE_AUDIENCE = os.getenv("EGA_SERVICE_AUDIENCE", "ega-service")
 
 
 # Pydantic models for request/response validation
@@ -130,6 +134,9 @@ class ExecutionAuthorityRequest(BaseModel):
     environment: str = Field(..., min_length=1)
     source_decision: str = Field(..., min_length=1)
     signature: Optional[str] = None  # Base64 Ed25519 signature over canonical authority fields
+    issued_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    audience: Optional[str] = None
     governance_context: Optional[Dict[str, Any]] = None
     evidence: Optional[Dict[str, Any]] = None
     status: str = "VALID"
@@ -291,6 +298,25 @@ def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> N
         encoded_key = keys.get(authority_request.authority_id)
         if not isinstance(encoded_key, str) or not authority_request.signature:
             raise HTTPException(status_code=403, detail="Authority signature is missing or untrusted")
+
+        # Signed authorities must be time-bounded and intended for this service.
+        issued_at = authority_request.issued_at
+        expires_at = authority_request.expires_at
+        if issued_at is None or expires_at is None or not authority_request.audience:
+            raise HTTPException(status_code=403, detail="Authority validity fields are missing")
+        if issued_at.tzinfo is None or issued_at.utcoffset() is None or expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            raise HTTPException(status_code=403, detail="Authority timestamps must include a timezone")
+        now = datetime.now(timezone.utc)
+        issued_utc = issued_at.astimezone(timezone.utc)
+        expires_utc = expires_at.astimezone(timezone.utc)
+        if authority_request.audience != SERVICE_AUDIENCE:
+            raise HTTPException(status_code=403, detail="Authority audience does not match this service")
+        if issued_utc.timestamp() > now.timestamp() + AUTHORITY_CLOCK_SKEW_SECONDS:
+            raise HTTPException(status_code=403, detail="Authority is not yet valid")
+        if expires_utc <= now or expires_utc <= issued_utc:
+            raise HTTPException(status_code=403, detail="Authority has expired or has an invalid validity interval")
+        if (expires_utc - issued_utc).total_seconds() > MAX_AUTHORITY_TTL_SECONDS:
+            raise HTTPException(status_code=403, detail="Authority validity interval exceeds configured maximum")
 
         try:
             from cryptography.exceptions import InvalidSignature
