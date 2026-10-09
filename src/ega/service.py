@@ -10,7 +10,7 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.3):
+Security features (v0.1.4):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Signed authorities require an expiry interval and matching service audience
 - Evaluation disabled by default when no trusted verification keys are configured
@@ -22,10 +22,10 @@ Security features (v0.1.3):
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.3 - ARCHITECTURAL):
-- Revocation and replay protection are not implemented
-- Public keys must be provisioned out-of-band; no authority issuance or key rotation API
-- Revocation, replay protection, key rotation, and trusted context resolution remain unimplemented
+Security limitations (v0.1.4 - ARCHITECTURAL):
+- SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
+- Revocation and key rotation are not implemented
+- Public keys must be provisioned out-of-band; no authority issuance API
 
 Configuration:
 - EGA_HOST: Bind address (default: 127.0.0.1)
@@ -37,6 +37,7 @@ Configuration:
 - EGA_MAX_AUTHORITY_TTL_SECONDS: Maximum signed authority lifetime (default: 300)
 - EGA_AUTHORITY_CLOCK_SKEW_SECONDS: Allowed future issue-time skew (default: 5)
 - EGA_SERVICE_AUDIENCE: Required authority audience (default: ega-service)
+- EGA_REPLAY_DB_PATH: SQLite replay ledger path (default: ./ega-replay.sqlite3)
 
 Usage:
   # Default: evaluation remains disabled until authority authenticity verification exists
@@ -54,6 +55,8 @@ from pydantic import BaseModel, Field, field_validator
 import uvicorn
 import os
 import time
+import sqlite3
+from pathlib import Path
 from datetime import datetime, timezone
 
 from .models import RuntimeIntent, ExecutionAuthority, EvidenceItem
@@ -76,6 +79,7 @@ MAX_CONTEXT_AGE_SECONDS = int(os.getenv("EGA_MAX_CONTEXT_AGE_SECONDS", "300"))  
 MAX_AUTHORITY_TTL_SECONDS = int(os.getenv("EGA_MAX_AUTHORITY_TTL_SECONDS", "300"))
 AUTHORITY_CLOCK_SKEW_SECONDS = int(os.getenv("EGA_AUTHORITY_CLOCK_SKEW_SECONDS", "5"))
 SERVICE_AUDIENCE = os.getenv("EGA_SERVICE_AUDIENCE", "ega-service")
+REPLAY_DB_PATH = os.getenv("EGA_REPLAY_DB_PATH", "./ega-replay.sqlite3")
 
 
 # Pydantic models for request/response validation
@@ -136,6 +140,7 @@ class ExecutionAuthorityRequest(BaseModel):
     environment: str = Field(..., min_length=1)
     source_decision: str = Field(..., min_length=1)
     signature: Optional[str] = None  # Base64 Ed25519 signature over canonical authority fields
+    nonce: Optional[str] = Field(default=None, min_length=16, max_length=256)
     issued_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     audience: Optional[str] = None
@@ -282,7 +287,7 @@ def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> N
 
     EGA_AUTHORITY_PUBLIC_KEYS_JSON maps authority IDs to base64-encoded raw
     32-byte Ed25519 public keys. The signature is base64-encoded and covers
-    every authority request field except the signature itself.
+    every authority request field except the signature itself, including a unique nonce.
     """
     import base64
     import binascii
@@ -301,7 +306,9 @@ def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> N
         if not isinstance(encoded_key, str) or not authority_request.signature:
             raise HTTPException(status_code=403, detail="Authority signature is missing or untrusted")
 
-        # Signed authorities must be time-bounded and intended for this service.
+        # Signed authorities must be time-bounded, nonce-bearing, and intended for this service.
+        if not authority_request.nonce:
+            raise HTTPException(status_code=403, detail="Authority nonce is missing")
         issued_at = authority_request.issued_at
         expires_at = authority_request.expires_at
         if issued_at is None or expires_at is None or not authority_request.audience:
@@ -361,6 +368,46 @@ def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> N
         RuntimeWarning,
         stacklevel=2,
     )
+
+
+def _claim_authority_nonce(authority_id: str, nonce: str, expires_at: datetime) -> None:
+    """Atomically claim a signed authority nonce in a local SQLite replay ledger.
+
+    The database must be shared by all service workers on this host. Multi-host
+    deployments need a shared strongly consistent store; this local ledger is
+    not a distributed replay defense.
+    """
+    if not nonce or expires_at.tzinfo is None or expires_at.utcoffset() is None:
+        raise HTTPException(status_code=403, detail="Authority replay fields are invalid")
+    db_path = Path(REPLAY_DB_PATH)
+    try:
+        if str(db_path.parent) not in ("", "."):
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(db_path), timeout=5.0, isolation_level=None) as conn:
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("""CREATE TABLE IF NOT EXISTS consumed_authority_nonces (
+                authority_id TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                expires_at REAL NOT NULL,
+                consumed_at REAL NOT NULL,
+                PRIMARY KEY (authority_id, nonce)
+            )""")
+            conn.execute("BEGIN IMMEDIATE")
+            now = time.time()
+            conn.execute("DELETE FROM consumed_authority_nonces WHERE expires_at <= ?", (now,))
+            try:
+                conn.execute(
+                    "INSERT INTO consumed_authority_nonces(authority_id, nonce, expires_at, consumed_at) VALUES (?, ?, ?, ?)",
+                    (authority_id, nonce, expires_at.timestamp(), now),
+                )
+            except sqlite3.IntegrityError:
+                conn.execute("ROLLBACK")
+                raise HTTPException(status_code=409, detail="Authority has already been used")
+            conn.execute("COMMIT")
+    except HTTPException:
+        raise
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail="Authority replay protection is unavailable") from exc
 
 
 def _convert_evidence_envelopes(
@@ -468,6 +515,14 @@ async def evaluate(request: EvaluateRequest):
         elif request.intent.evidence_envelopes:
             # No AEE conditions but evidence provided - convert but don't use
             current_evidence = None
+
+        # Claim nonce only after request, authority, context, and evidence validation.
+        if request.authority.expires_at is not None and request.authority.nonce is not None:
+            _claim_authority_nonce(
+                request.authority.authority_id,
+                request.authority.nonce,
+                request.authority.expires_at,
+            )
 
         # Final authority check: use prepared.context_epoch for epoch/version semantics
         # The wall-clock freshness check was done separately above
