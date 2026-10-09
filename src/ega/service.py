@@ -42,6 +42,8 @@ Usage:
   EGA_FAIL_CLOSED=false python3 -m ega.service
 """
 
+from __future__ import annotations
+
 from typing import Any, Dict, Optional, Set
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
