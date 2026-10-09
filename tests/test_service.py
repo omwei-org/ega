@@ -6,17 +6,25 @@ Tests service behavior, error handling, and intent-authority validation.
 """
 
 import os
-import pytest
+from datetime import datetime, timezone, timedelta
+from hashlib import sha256
+import json
 from ega.models import RuntimeIntent, ExecutionAuthority, AuthorizationScope, DecisionRecord, EvidenceItem, AEECondition
 from ega.authority import issue_authority
 from ega.boundary import prepare, commit
+from ega.interop import (
+    observer_v1_envelope_to_evidence,
+    _canonicalize_nextone_v1,
+    _compute_observer_v1_integrity_digest,
+    _derive_observer_v1_evidence_id,
+)
 
 # Set environment variables for testing BEFORE importing the app
 os.environ["EGA_FAIL_CLOSED"] = "false"
 os.environ["EGA_TRUSTED_AUTHORITY_IDS"] = ""
 
 from fastapi.testclient import TestClient
-from ega.service import app, EvaluateRequest, RuntimeIntentRequest, ExecutionAuthorityRequest, Parameters, ItemsItem
+from ega.service import app, EvaluateRequest, RuntimeIntentRequest, ExecutionAuthorityRequest, Parameters, ItemsItem, EvidenceEnvelopeRequest
 
 # Update module-level variables after import
 from ega import service
@@ -25,6 +33,62 @@ service.FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = False
 
 # Test client
 client = TestClient(app)
+
+
+def _golden_observer_envelope() -> dict:
+    """Golden Observer v1 envelope from reference package."""
+    return {
+        "schema_version": "nextone.observer.evidence-envelope/1.0",
+        "evidence_id": "ev1:1698f0884661e8010d626cbad5c1fb666858a2f0793b6e234ce891150145c320",
+        "subject": {"type": "tenant", "id": "T1"},
+        "target": {"resource": "catalog", "entity_id": "SKU1", "field": "price_cents"},
+        "observed_state": "KNOWN",
+        "observed_value": 2500,
+        "observed_at": "2026-10-03T19:00:00Z",
+        "temporal_basis": {
+            "type": "point_in_time",
+            "timestamp_semantics": "observation_completed_at",
+            "clock": "UTC"
+        },
+        "provenance": {
+            "source_id": "local-catalog",
+            "source_kind": "local_catalog",
+            "collection_method": "read_only",
+            "source_locator": "catalog/T1/SKU1/price_cents"
+        },
+        "uncertainty": {
+            "source_confidence": None,
+            "confidence_semantics": "not_supplied"
+        },
+        "integrity": {
+            "canonicalization": "nextone-canonical-json-v1",
+            "algorithm": "sha256",
+            "digest": "sha256:47b7a98f1f6f1b148e21f3dc1d462b2fea53baf1ea6f172d6bec6274c07ff193"
+        }
+    }
+
+
+def _make_fresh_observer_envelope(value: int) -> dict:
+    """Create a fresh Observer v1 envelope with current timestamp and recomputed evidence_id."""
+    from ega.interop import _derive_observer_v1_evidence_id
+    now = datetime.now(timezone.utc)
+    envelope = _golden_observer_envelope().copy()
+    envelope["observed_value"] = value
+    envelope["observed_at"] = now.isoformat()
+    # Recompute evidence_id from identity payload
+    envelope["evidence_id"] = _derive_observer_v1_evidence_id(
+        subject=envelope["subject"],
+        target=envelope["target"],
+        observed_state=envelope["observed_state"],
+        observed_value=value,
+        observed_at=envelope["observed_at"],
+        provenance=envelope["provenance"],
+    )
+    # Recompute integrity
+    covered = {k: v for k, v in envelope.items() if k != "integrity"}
+    digest = sha256(_canonicalize_nextone_v1(covered)).hexdigest()
+    envelope["integrity"]["digest"] = f"sha256:{digest}"
+    return envelope
 
 
 def test_health_check():
@@ -50,11 +114,12 @@ def test_evaluate_valid_authority():
         action="retail_sale",
         target="tenant-456",
         environment="production",
-        parameter_constraints={}  # No constraints for v0.1
+        parameter_constraints={}  # No constraints for v0.1.2
     )
     authority = issue_authority(intent, scope, authority_id="auth-001")
 
     # Build request
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -74,7 +139,7 @@ def test_evaluate_valid_authority():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -88,6 +153,7 @@ def test_evaluate_valid_authority():
 
 def test_evaluate_intent_mismatch_principal():
     """Intent principal different from authority principal is rejected."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-999",  # Different from authority
@@ -107,7 +173,7 @@ def test_evaluate_intent_mismatch_principal():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -117,6 +183,7 @@ def test_evaluate_intent_mismatch_principal():
 
 def test_evaluate_intent_mismatch_action():
     """Intent action different from authority action is rejected."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -136,7 +203,7 @@ def test_evaluate_intent_mismatch_action():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -146,6 +213,7 @@ def test_evaluate_intent_mismatch_action():
 
 def test_evaluate_intent_mismatch_target():
     """Intent target different from authority target is rejected."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -165,7 +233,7 @@ def test_evaluate_intent_mismatch_target():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -175,6 +243,7 @@ def test_evaluate_intent_mismatch_target():
 
 def test_evaluate_intent_mismatch_parameters():
     """Intent parameters different from authority parameters is rejected."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -194,7 +263,7 @@ def test_evaluate_intent_mismatch_parameters():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -240,6 +309,7 @@ def test_evaluate_missing_required_field():
 
 def test_evaluate_with_expected_total_coms():
     """Evaluation with expected_total_coms in parameters."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -265,7 +335,7 @@ def test_evaluate_with_expected_total_coms():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -275,9 +345,10 @@ def test_evaluate_with_expected_total_coms():
 
 
 def test_evaluate_epoch_change_blocks():
-    """Context epoch is passed through to EGA prepare/commit logic."""
-    # For v0.1, the service prepares fresh at the request's context_epoch
-    # This test verifies that context_epoch is passed through correctly
+    """Context epoch staleness is detected using system time (v0.1.2)."""
+    # This test verifies that stale context epochs are detected
+    current_time = int(datetime.now(timezone.utc).timestamp())
+    stale_time = current_time - 400  # 400 seconds ago (beyond default 300s threshold)
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -297,18 +368,18 @@ def test_evaluate_epoch_change_blocks():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=2
+        context_epoch=stale_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
-    assert response.status_code == 200
-    data = response.json()
-    # Fresh preparation at epoch 2 succeeds
-    assert data["decision"] == "COMMIT"
+    # v0.1.2: stale context should block
+    assert response.status_code == 400
+    assert "stale" in response.json()["detail"].lower()
 
 
 def test_evaluate_with_aee_conditions():
-    """Evaluation with AEE conditions requires evidence (v0.1.1 fix)."""
+    """Evaluation with AEE conditions requires evidence (v0.1.2 fix)."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -330,26 +401,27 @@ def test_evaluate_with_aee_conditions():
             aee_conditions=[
                 {
                     "condition_id": "cond-001",
-                    "evidence_ref": "evidence-001",
+                    "evidence_ref": "ev1:1698f0884661e8010d626cbad5c1fb666858a2f0793b6e234ce891150145c320",
                     "state_equals": "KNOWN"
                 }
             ]
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.1 fix: AEE conditions require evidence, so this returns 400
+    # v0.1.2 fix: AEE conditions require evidence, so this returns 400
     assert response.status_code == 400
     assert "evidence" in response.json()["detail"].lower()
 
 
 def test_forged_authority_rejected():
     """Caller-constructed authority without provenance is blocked when fail-closed is enabled."""
-    # This test documents the v0.1.1 fix: authority whitelist enforcement
+    # This test documents the v0.1.2 fix: authority whitelist enforcement
     # In production with EGA_FAIL_CLOSED=true and EGA_TRUSTED_AUTHORITY_IDS set,
     # forged authorities are rejected. In test mode (fail-closed=false), they are accepted.
     # For this test, we assume fail-closed=false for testing compatibility
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -369,7 +441,7 @@ def test_forged_authority_rejected():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -382,6 +454,7 @@ def test_forged_authority_rejected():
 
 def test_nested_parameter_mismatch():
     """Nested parameter changes are detected."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -407,7 +480,7 @@ def test_nested_parameter_mismatch():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -417,6 +490,7 @@ def test_nested_parameter_mismatch():
 
 def test_extra_parameters_in_intent():
     """Extra parameters in intent cause mismatch."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -442,7 +516,7 @@ def test_extra_parameters_in_intent():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -451,7 +525,7 @@ def test_extra_parameters_in_intent():
 
 
 def test_aee_with_missing_evidence_blocks():
-    """AEE conditions with missing evidence now block (v0.1.1 fix)."""
+    """AEE conditions with missing evidence now block (v0.1.2 fix)."""
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -460,7 +534,7 @@ def test_aee_with_missing_evidence_blocks():
             parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
             environment="production",
             decision_ref="decision-001",
-            evidence={}  # Empty evidence, but AEE requires it
+            evidence_envelopes=None  # No evidence provided
         ),
         authority=ExecutionAuthorityRequest(
             authority_id="auth-001",
@@ -474,16 +548,16 @@ def test_aee_with_missing_evidence_blocks():
             aee_conditions=[
                 {
                     "condition_id": "cond-001",
-                    "evidence_ref": "evidence-001",
+                    "evidence_ref": "ev1:1698f0884661e8010d626cbad5c1fb666858a2f0793b6e234ce891150145c320",
                     "state_equals": "KNOWN"
                 }
             ]
         ),
-        context_epoch=1
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.1 fix: should return 400 with error about missing evidence
+    # v0.1.2 fix: should return 400 with error about missing evidence
     assert response.status_code == 400
     assert "evidence" in response.json()["detail"].lower()
 
@@ -492,6 +566,7 @@ def test_exception_handling_fail_closed():
     """Internal exceptions return error (BLOCK decision to caller)."""
     # This test verifies that exceptions don't return COMMIT
     # Malformed parameters that cause internal error
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -511,7 +586,7 @@ def test_exception_handling_fail_closed():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -522,6 +597,7 @@ def test_exception_handling_fail_closed():
 def test_authority_reuse_different_intent():
     """Authority cannot be reused for different intent (intent mismatch)."""
     # Use same authority with different intent
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -541,7 +617,7 @@ def test_authority_reuse_different_intent():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -550,9 +626,10 @@ def test_authority_reuse_different_intent():
 
 
 def test_expiry_not_supported():
-    """Expiry is not implemented in v0.1."""
+    """Expiry is not implemented in v0.1.2 (architectural limitation)."""
     # This test documents that there is no expiry mechanism
     # Any authority with status=VALID is accepted regardless of age
+    current_time = int(datetime.now(timezone.utc).timestamp())
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -573,7 +650,7 @@ def test_expiry_not_supported():
             status="VALID"
             # No expiry field exists
         ),
-        context_epoch=999999  # Very high epoch, but no expiry check
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
@@ -593,7 +670,7 @@ def test_untrusted_authority_blocked():
 
 
 def test_aee_without_evidence_blocks():
-    """AEE conditions without evidence now block (v0.1.1 fix)."""
+    """AEE conditions without evidence now block (v0.1.2 fix)."""
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -602,7 +679,7 @@ def test_aee_without_evidence_blocks():
             parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
             environment="production",
             decision_ref="decision-001",
-            evidence=None  # No evidence provided
+            evidence_envelopes=None  # No evidence provided
         ),
         authority=ExecutionAuthorityRequest(
             authority_id="auth-001",
@@ -616,22 +693,23 @@ def test_aee_without_evidence_blocks():
             aee_conditions=[
                 {
                     "condition_id": "cond-001",
-                    "evidence_ref": "evidence-001",
+                    "evidence_ref": "ev1:1698f0884661e8010d626cbad5c1fb666858a2f0793b6e234ce891150145c320",
                     "state_equals": "KNOWN"
                 }
             ]
         ),
-        context_epoch=1
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.1 fix: should return 400 with error about missing evidence
+    # v0.1.2 fix: should return 400 with error about missing evidence
     assert response.status_code == 400
     assert "evidence" in response.json()["detail"].lower()
 
 
 def test_aee_with_evidence_allowed():
-    """AEE conditions with evidence are allowed but AEE is not evaluated (v0.1.1 limitation)."""
+    """AEE conditions with correct evidence are evaluated and allowed (v0.1.2)."""
+    fresh_envelope = _make_fresh_observer_envelope(2500)
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -640,7 +718,7 @@ def test_aee_with_evidence_allowed():
             parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
             environment="production",
             decision_ref="decision-001",
-            evidence={"some": "evidence"}  # Evidence provided
+            evidence_envelopes=[EvidenceEnvelopeRequest(**fresh_envelope)]
         ),
         authority=ExecutionAuthorityRequest(
             authority_id="auth-001",
@@ -654,25 +732,25 @@ def test_aee_with_evidence_allowed():
             aee_conditions=[
                 {
                     "condition_id": "cond-001",
-                    "evidence_ref": "evidence-001",
-                    "state_equals": "KNOWN"
+                    "evidence_ref": fresh_envelope["evidence_id"],
+                    "state_equals": "KNOWN",
+                    "value_equals": 2500
                 }
             ]
         ),
-        context_epoch=1
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.1: evidence provided, so request is accepted
-    # AEE conditions are NOT evaluated because evidence validation is not implemented
-    # This is a documented limitation
+    # v0.1.2: evidence provided and AEE evaluated
     assert response.status_code == 200
     data = response.json()
     assert data["decision"] == "COMMIT"
 
 
-def test_no_aee_conditions_evidence_optional():
-    """Without AEE conditions, evidence is optional."""
+def test_aee_incorrect_value_blocks():
+    """AEE conditions with incorrect evidence value block (v0.1.2)."""
+    fresh_envelope = _make_fresh_observer_envelope(3000)  # Wrong value
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -681,7 +759,7 @@ def test_no_aee_conditions_evidence_optional():
             parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
             environment="production",
             decision_ref="decision-001",
-            evidence=None  # No evidence, but no AEE conditions
+            evidence_envelopes=[EvidenceEnvelopeRequest(**fresh_envelope)]
         ),
         authority=ExecutionAuthorityRequest(
             authority_id="auth-001",
@@ -691,21 +769,109 @@ def test_no_aee_conditions_evidence_optional():
             parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
             environment="production",
             source_decision="decision-001",
-            status="VALID"
-            # No AEE conditions
+            status="VALID",
+            aee_conditions=[
+                {
+                    "condition_id": "cond-001",
+                    "evidence_ref": fresh_envelope["evidence_id"],
+                    "state_equals": "KNOWN",
+                    "value_equals": 2500  # Condition expects 2500, evidence has 3000
+                }
+            ]
         ),
-        context_epoch=1
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2: incorrect value should block
     assert response.status_code == 200
     data = response.json()
-    assert data["decision"] == "COMMIT"
+    assert data["decision"] == "BLOCK"
+    assert "VALUE_MISMATCH" in data["reason"]
 
 
-def test_error_messages_generic():
-    """Error messages do not leak internal details (v0.1.1 fix)."""
-    # Trigger a ValueError with internal details
+def test_aee_stale_evidence_blocks():
+    """Stale evidence blocks (v0.1.2)."""
+    stale_envelope = _golden_observer_envelope()  # Old timestamp from 2026-10-03
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001",
+            evidence_envelopes=[EvidenceEnvelopeRequest(**stale_envelope)]
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID",
+            aee_conditions=[
+                {
+                    "condition_id": "cond-001",
+                    "evidence_ref": stale_envelope["evidence_id"],
+                    "state_equals": "KNOWN"
+                }
+            ]
+        ),
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2: stale evidence should block
+    assert response.status_code == 400
+    assert "stale" in response.json()["detail"].lower()
+
+
+def test_aee_wrong_evidence_ref_blocks():
+    """Evidence with wrong reference blocks (v0.1.2)."""
+    fresh_envelope = _make_fresh_observer_envelope(2500)
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001",
+            evidence_envelopes=[EvidenceEnvelopeRequest(**fresh_envelope)]
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID",
+            aee_conditions=[
+                {
+                    "condition_id": "cond-001",
+                    "evidence_ref": "ev1:wrongevidenceid",  # Wrong reference
+                    "state_equals": "KNOWN"
+                }
+            ]
+        ),
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2: wrong evidence ref should block
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "BLOCK"
+    assert "AEE_EVIDENCE_UNAVAILABLE" in data["reason"]
+
+
+def test_context_staleness_detection():
+    """Stale context epoch blocks (v0.1.2)."""
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -725,7 +891,113 @@ def test_error_messages_generic():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=1
+        context_epoch=int((datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp())  # 10 minutes ago
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2: stale context should block
+    assert response.status_code == 400
+    assert "stale" in response.json()["detail"].lower()
+
+
+def test_malformed_evidence_envelope_blocks():
+    """Malformed evidence envelope blocks (v0.1.2)."""
+    malformed_envelope = _golden_observer_envelope().copy()
+    malformed_envelope["integrity"]["digest"] = "sha256:wrongdigest"  # Tampered
+
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001",
+            evidence_envelopes=[EvidenceEnvelopeRequest(**malformed_envelope)]
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID",
+            aee_conditions=[
+                {
+                    "condition_id": "cond-001",
+                    "evidence_ref": malformed_envelope["evidence_id"],
+                    "state_equals": "KNOWN"
+                }
+            ]
+        ),
+        context_epoch=int((datetime.now(timezone.utc).timestamp()))
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    # v0.1.2: malformed envelope should block
+    assert response.status_code == 400
+    assert "integrity" in response.json()["detail"].lower() or "digest" in response.json()["detail"].lower()
+
+
+def test_no_aee_conditions_evidence_optional():
+    """Without AEE conditions, evidence is optional."""
+    current_time = int(datetime.now(timezone.utc).timestamp())
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001",
+            evidence_envelopes=None  # No evidence, but no AEE conditions
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID"
+            # No AEE conditions
+        ),
+        context_epoch=current_time
+    )
+
+    response = client.post("/v1/evaluate", json=request.model_dump())
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "COMMIT"
+
+
+def test_error_messages_generic():
+    """Error messages do not leak internal details (v0.1.2 fix)."""
+    # Trigger a ValueError with internal details
+    current_time = int(datetime.now(timezone.utc).timestamp())
+    request = EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001"
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID"
+        ),
+        context_epoch=current_time
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())

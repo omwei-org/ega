@@ -10,26 +10,29 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.1):
+Security features (v0.1.2):
 - Trusted authority whitelist (fail-closed by default)
-- AEE conditions require evidence (or block)
+- AEE conditions require Observer v1 evidence or block
+- Evidence converted using existing observer_v1_envelope_to_evidence()
+- AEE conditions evaluated against converted evidence
+- Independent context epoch from system time (staleness detection)
 - Binds to 127.0.0.1 by default
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.1):
-- No cryptographic signature verification (relies on whitelist)
-- No replay protection
-- No expiry/revocation
-- Evidence validation not implemented (evidence not converted from EvidenceEnvelope)
-- AEE conditions require evidence but are not evaluated (evidence validation not implemented)
-- No HTTP authentication (must be added at network layer)
+Security limitations (v0.1.2 - ARCHITECTURAL):
+- No cryptographic signature verification (not in EGA models)
+- No authority expiry/revocation (not in EGA models)
+- No replay protection (not in EGA models)
+- Authority retrieval from trusted governance system not implemented
+- These require EGA core model changes, not service-layer changes
 
 Configuration:
 - EGA_HOST: Bind address (default: 127.0.0.1)
 - EGA_PORT: Port (default: 8000)
 - EGA_TRUSTED_AUTHORITY_IDS: Comma-separated list of trusted authority IDs (default: empty)
 - EGA_FAIL_CLOSED: If true, reject authorities not in whitelist (default: true)
+- EGA_MAX_CONTEXT_AGE_SECONDS: Max allowed age for context epoch (default: 300)
 
 Usage:
   # Production mode (fail-closed, requires whitelist)
@@ -44,10 +47,12 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 import uvicorn
 import os
+import time
 
 from .models import RuntimeIntent, ExecutionAuthority, EvidenceItem
 from .boundary import prepare, final_authority_check, commit
 from .authority import AuthorizationError
+from .interop import observer_v1_envelope_to_evidence
 
 
 # Configuration
@@ -57,6 +62,7 @@ TRUSTED_AUTHORITY_IDS: Set[str] = set(
     os.getenv("EGA_TRUSTED_AUTHORITY_IDS", "").split(",") if os.getenv("EGA_TRUSTED_AUTHORITY_IDS") else []
 )
 FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = os.getenv("EGA_FAIL_CLOSED", "true").lower() == "true"
+MAX_CONTEXT_AGE_SECONDS = int(os.getenv("EGA_MAX_CONTEXT_AGE_SECONDS", "300"))  # 5 minutes default
 
 
 # Pydantic models for request/response validation
@@ -77,9 +83,30 @@ class RuntimeIntentRequest(BaseModel):
     environment: str = Field(..., min_length=1)
     decision_ref: Optional[str] = None
     governance_context: Optional[Dict[str, Any]] = None
-    evidence: Optional[Dict[str, Any]] = None
+    evidence: Optional[Dict[str, Any]] = None  # Accept plain dict for backward compatibility
+    evidence_envelopes: Optional[list[EvidenceEnvelopeRequest]] = None  # Observer v1 envelopes
+
+class EvidenceEnvelopeRequest(BaseModel):
+    """Observer v1 evidence envelope."""
+    schema_version: str
+    evidence_id: str
+    subject: Dict[str, Any]
+    target: Dict[str, Any]
+    observed_state: str
+    observed_value: Any
+    observed_at: str
+    temporal_basis: Dict[str, Any]
+    provenance: Dict[str, Any]
+    uncertainty: Optional[Dict[str, Any]] = None
+    integrity: Dict[str, Any]
 
 class AEEConditionRequest(BaseModel):
+    condition_id: str
+    evidence_ref: str
+    state_equals: Optional[str] = None
+    freshness_equals: Optional[str] = None
+    uncertainty_max: Optional[float] = None
+    value_equals: Optional[Any] = None
     condition_id: str
     evidence_ref: str
     state_equals: Optional[str] = None
@@ -241,8 +268,12 @@ def _validate_authority_trust(authority: ExecutionAuthority) -> None:
     If the whitelist is empty and FAIL_CLOSED_ON_UNKNOWN_AUTHORITY is false,
     the service operates in unsafe mode (for testing only).
 
-    This is a minimal trust mechanism for v0.1.1. Production should use
+    This is a minimal trust mechanism for v0.1.2. Production should use
     cryptographic signature verification or lookup from a trusted governance system.
+
+    ARCHITECTURAL LIMITATION: EGA models do not support signature verification.
+    This whitelist-based approach is a fallback until signature fields are added
+    to ExecutionAuthority model.
     """
     if not TRUSTED_AUTHORITY_IDS:
         if FAIL_CLOSED_ON_UNKNOWN_AUTHORITY:
@@ -265,6 +296,53 @@ def _validate_authority_trust(authority: ExecutionAuthority) -> None:
             status_code=403,
             detail=f"Authority '{authority.authority_id}' not in trusted whitelist"
         )
+
+
+def _convert_evidence_envelopes(
+    envelope_requests: list[EvidenceEnvelopeRequest],
+) -> Dict[str, EvidenceItem]:
+    """
+    Convert Observer v1 evidence envelopes to EGA EvidenceItem dict.
+
+    Uses the existing observer_v1_envelope_to_evidence() adapter which:
+    - Validates envelope integrity
+    - Validates evidence_id derivation
+    - Computes freshness from observed_at
+    - Performs all security checks
+
+    Raises HTTPException if conversion fails.
+    """
+    evidence_dict: Dict[str, EvidenceItem] = {}
+
+    for envelope_request in envelope_requests:
+        try:
+            # Convert Pydantic model to dict
+            envelope_dict = envelope_request.model_dump()
+
+            # Use existing adapter for conversion
+            evidence_item = observer_v1_envelope_to_evidence(
+                envelope_dict,
+                evaluation_status="USED",
+                role="commit_condition",
+                max_age_seconds=MAX_CONTEXT_AGE_SECONDS,
+            )
+
+            # Check for freshness before adding
+            if evidence_item.freshness == "STALE":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Evidence {evidence_item.evidence_ref} is stale (older than {MAX_CONTEXT_AGE_SECONDS} seconds)"
+                )
+
+            evidence_dict[evidence_item.evidence_ref] = evidence_item
+
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Evidence envelope validation failed: {str(e)}"
+            )
+
+    return evidence_dict
 
 
 @app.post("/v1/evaluate", response_model=EvaluateResponse)
@@ -293,40 +371,46 @@ async def evaluate(request: EvaluateRequest):
         # Security check 2: validate intent-authority match
         _validate_intent_authority_match(intent, authority)
 
+        # Security check 3: context freshness (use system time for current_epoch)
+        current_epoch = int(time.time())
+        context_age = current_epoch - request.context_epoch
+        if context_age > MAX_CONTEXT_AGE_SECONDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Context epoch is stale (age: {context_age}s, max: {MAX_CONTEXT_AGE_SECONDS}s)"
+            )
+
         # Use existing EGA boundary functions
         prepared = prepare(authority, request.context_epoch)
 
-        # Evidence handling: for v0.1.1, AEE conditions require evidence or block
-        # However, evidence validation is not implemented, so we don't evaluate AEE predicates
+        # Evidence handling: convert Observer v1 envelopes to EvidenceItem
         current_evidence = None
         if prepared.authority.aee_conditions:
             # AEE conditions are present - evidence is required
-            if not request.intent.evidence:
+            if not request.intent.evidence_envelopes:
                 raise HTTPException(
                     status_code=400,
-                    detail="AEE conditions present in authority but no evidence provided in intent"
+                    detail="AEE conditions present in authority but no evidence envelopes provided in intent"
                 )
-            # For v0.1.1, we require evidence but don't validate it
-            # We set current_evidence = None to skip AEE evaluation in boundary.py
-            # This is intentional: we don't have evidence validation, so we don't evaluate AEE
-            # But we require evidence to be provided to ensure the caller acknowledges AEE requirements
-            current_evidence = None
-        elif request.intent.evidence:
-            # No AEE conditions but evidence provided - accept but don't use
+
+            # Convert Observer v1 envelopes to EvidenceItem dict
+            current_evidence = _convert_evidence_envelopes(request.intent.evidence_envelopes)
+        elif request.intent.evidence_envelopes:
+            # No AEE conditions but evidence provided - convert but don't use
             current_evidence = None
 
         # Final authority check
         reason = final_authority_check(
             prepared,
-            request.context_epoch,
-            current_authority=None,  # Not checking for authority changes in v0.1
+            current_epoch,  # Use system time for current_epoch
+            current_authority=None,  # Not checking for authority changes in v0.1.2
             current_evidence=current_evidence
         )
 
         # Commit decision
         result = commit(
             prepared,
-            request.context_epoch,
+            current_epoch,  # Use system time for current_epoch
             current_evidence=current_evidence
         )
 
