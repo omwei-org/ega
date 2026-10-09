@@ -379,6 +379,8 @@ def _claim_authority_nonce(authority_id: str, nonce: str, expires_at: datetime) 
     """
     if not nonce or expires_at.tzinfo is None or expires_at.utcoffset() is None:
         raise HTTPException(status_code=403, detail="Authority replay fields are invalid")
+    if expires_at.timestamp() <= time.time():
+        raise HTTPException(status_code=403, detail="Expired authority cannot be claimed")
     db_path = Path(REPLAY_DB_PATH)
     try:
         if str(db_path.parent) not in ("", "."):
