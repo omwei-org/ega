@@ -66,7 +66,7 @@ TRUSTED_AUTHORITY_IDS: Set[str] = set(
 FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = os.getenv("EGA_FAIL_CLOSED", "true").lower() == "true"
 # The HTTP request carries caller-supplied authority fields; an ID whitelist
 # does not authenticate those fields. Unsafe model/demo mode must be explicit.
-ALLOW_UNVERIFIED_AUTHORITY = os.getenv("EGA_ALLOW_UNVERIFIED_AUTHORITY", "false").lower() == "true
+ALLOW_UNVERIFIED_AUTHORITY = os.getenv("EGA_ALLOW_UNVERIFIED_AUTHORITY", "false").lower() == "true"
 MAX_CONTEXT_AGE_SECONDS = int(os.getenv("EGA_MAX_CONTEXT_AGE_SECONDS", "300"))  # 5 minutes default
 
 
