@@ -11,7 +11,7 @@ Architecture:
 - Rejects malformed/invalid authority
 
 Security features (v0.1.2.2):
-- Trusted authority whitelist (fail-closed by default)
+- Evaluation disabled by default until authority authenticity can be verified
 - AEE conditions require Observer v1 evidence or block
 - Evidence converted using existing observer_v1_envelope_to_evidence()
 - AEE conditions evaluated against converted evidence
@@ -21,10 +21,10 @@ Security features (v0.1.2.2):
 - HTTP authentication not implemented (requires network security layer)
 
 Security limitations (v0.1.2.2 - ARCHITECTURAL):
-- No cryptographic signature verification (not in EGA models)
+- No cryptographic signature verification (therefore HTTP evaluation is disabled by default)
 - No authority expiry/revocation (not in EGA models)
 - No replay protection (not in EGA models)
-- Authority retrieval from trusted governance system not implemented
+- Authority retrieval from trusted governance system not implemented; ID allowlists are not authentication
 - These require EGA core model changes, not service-layer changes
 
 Configuration:
