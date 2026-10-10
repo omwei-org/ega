@@ -1,7 +1,5 @@
 from dataclasses import dataclass, field
 from typing import Any
-import json
-import hashlib
 
 @dataclass(frozen=True)
 class RuntimeIntent:
@@ -90,14 +88,6 @@ class ExecutionAuthority:
     decision_record_ref: str | None = None
     decision_record_digest: str | None = None
     aee_conditions: tuple[AEECondition, ...] = field(default_factory=tuple)
-    # Security hardening fields (v0.2.0)
-    signature: str = ""  # Ed25519 signature over canonical authority
-    public_key_id: str = ""  # Reference to trusted public key
-    issued_at: str = ""  # ISO 8601 timestamp
-    not_before: str = ""  # ISO 8601 timestamp (not valid before this time)
-    expires_at: str = ""  # ISO 8601 timestamp (not valid after this time)
-    audience: str = ""  # Intended audience (e.g., "comos-hub")
-    nonce: str = ""  # Unique identifier for replay protection
 
 @dataclass(frozen=True)
 class ExecutionAttestation:
@@ -117,43 +107,3 @@ class ExecutionAttestation:
     decision_record_ref: str | None = None
     decision_record_digest: str | None = None
     selected_evidence_refs: tuple[str, ...] = field(default_factory=tuple)
-
-
-def canonicalize_authority(authority: ExecutionAuthority) -> bytes:
-    """
-    Canonicalize authority for signing or verification.
-
-    Rules:
-    - Exclude signature and public_key_id from canonical form
-    - Sort keys alphabetically
-    - Compact JSON encoding (no extra whitespace)
-    - UTF-8 encoding
-
-    This ensures deterministic signature computation.
-    """
-    from dataclasses import asdict
-
-    # Convert to dict
-    authority_dict = asdict(authority)
-
-    # Exclude fields that are not part of signature
-    authority_dict.pop("signature", None)
-    authority_dict.pop("public_key_id", None)
-
-    # Sort keys for deterministic order
-    sorted_dict = dict(sorted(authority_dict.items()))
-
-    # Convert to JSON with compact encoding
-    canonical_json = json.dumps(sorted_dict, sort_keys=True, separators=(',', ':'))
-
-    return canonical_json.encode('utf-8')
-
-
-def compute_authority_digest(authority: ExecutionAuthority) -> str:
-    """
-    Compute SHA-256 digest of canonical authority.
-
-    Used for authority binding and integrity verification.
-    """
-    canonical = canonicalize_authority(authority)
-    return hashlib.sha256(canonical).hexdigest()
