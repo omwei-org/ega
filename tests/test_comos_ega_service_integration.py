@@ -26,6 +26,7 @@ import requests
 import sys
 import hashlib
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
@@ -233,7 +234,7 @@ def test_replay_nonce_is_rejected(client):
     """A nonce accepted once by the real HTTP service cannot be reused."""
     authority = create_test_authority(authority_id="test-auth-001")
     authority["aee_conditions"] = None
-    authority["nonce"] = "test-replay-nonce-0001"
+    authority["nonce"] = f"test-replay-{uuid.uuid4().hex}"
     authority["expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
     intent = create_test_intent()
 
@@ -243,7 +244,8 @@ def test_replay_nonce_is_rejected(client):
         context_epoch=int(time.time()),
         evidence_envelopes=None,
     )
-    assert first["decision"] in ("COMMIT", "BLOCK")
+    assert first["decision"] == "COMMIT"
+    assert first["applied"] is True
 
     with pytest.raises(requests.exceptions.HTTPError) as exc_info:
         client.evaluate(
