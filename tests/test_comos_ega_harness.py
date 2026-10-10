@@ -17,6 +17,7 @@ This harness tests the EGA side of that contract only.
 """
 
 import pytest
+import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
@@ -226,7 +227,7 @@ def create_test_evidence(price: int, product_id: str = "prod-001") -> EvidenceIt
     """Create test evidence for AEE conditions."""
     return EvidenceItem(
         evidence_ref="evidence-baseline",
-        digest=f"sha256-{hash(str(price))}",
+        digest=f"sha256-{hashlib.sha256(str(price).encode()).hexdigest()}",
         observed_at=time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         evaluation_status="USED",
         role="commit_condition",
@@ -462,7 +463,7 @@ def test_expired_or_stale_authority():
     # Create authority with freshness requirement
     stale_evidence = EvidenceItem(
         evidence_ref="evidence-baseline",
-        digest=f"sha256-{hash(2500)}",
+        digest=f"sha256-{hashlib.sha256(b'2500').hexdigest()}",
         observed_at="2020-01-01T00:00:00Z",  # Very old timestamp
         evaluation_status="USED",
         role="commit_condition",
