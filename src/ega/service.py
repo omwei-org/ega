@@ -10,7 +10,7 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.6):
+Security features (v0.1.7):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Signed authorities require an expiry interval and matching service audience
 - Evaluation fails closed when no trusted verification keys or context provider are configured
@@ -22,7 +22,7 @@ Security features (v0.1.6):
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.6 - ARCHITECTURAL):
+Security limitations (v0.1.7 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
 - Revocation and key rotation are not implemented
 - Public keys must be provisioned out-of-band; no authority issuance API
@@ -85,6 +85,10 @@ REPLAY_DB_PATH = os.getenv("EGA_REPLAY_DB_PATH", "./ega-replay.sqlite3")
 # Production integration must install a provider backed by trusted current state.
 # The provider must not derive its answer from fields in the incoming request.
 CONTEXT_VERSION_PROVIDER: Optional[Callable[["EvaluateRequest"], int]] = None
+
+# Required for signed-authority deployments. Query a trusted authority registry;
+# return True only when this exact authority_id remains active and not revoked.
+AUTHORITY_STATUS_PROVIDER: Optional[Callable[[str], bool]] = None
 
 
 # Pydantic models for request/response validation
@@ -176,7 +180,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.6"
+    version="0.1.7"
 )
 
 
@@ -481,6 +485,33 @@ async def evaluate(request: EvaluateRequest):
         # Security check 1: verify signed authority authenticity and validity
         _validate_authority_trust(request.authority)
 
+        # Signed authority authenticity does not establish that the authority remains
+        # active. Require a trusted registry status provider in signed-key mode.
+        authority_status_provider = AUTHORITY_STATUS_PROVIDER
+        signed_authority_mode = bool(os.getenv("EGA_AUTHORITY_PUBLIC_KEYS_JSON", ""))
+        if signed_authority_mode and authority_status_provider is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Trusted authority status provider is not configured",
+            )
+        if signed_authority_mode:
+            try:
+                authority_is_active = authority_status_provider(request.authority.authority_id)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Trusted authority status is unavailable",
+                ) from exc
+            if not isinstance(authority_is_active, bool):
+                raise HTTPException(status_code=503, detail="Trusted authority status is invalid")
+            if not authority_is_active:
+                return EvaluateResponse(
+                    decision="BLOCK",
+                    reason="AUTHORITY_REVOKED",
+                    applied=False,
+                    effect="NOT_EXECUTED",
+                )
+
         # Security check 2: validate intent-authority match
         _validate_intent_authority_match(intent, authority)
 
@@ -554,8 +585,29 @@ async def evaluate(request: EvaluateRequest):
                 effect="NOT_EXECUTED",
             )
 
-        # Claim nonce only after request, authority, evidence, and the final context
-        # re-read have passed. A stale-context block does not consume the authority.
+        # Re-check current authority status immediately before the decision. This
+        # catches revocation during evaluation; it does not make a later external
+        # effect atomic with this decision.
+        if signed_authority_mode:
+            try:
+                authority_is_active = authority_status_provider(request.authority.authority_id)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Trusted authority status is unavailable",
+                ) from exc
+            if not isinstance(authority_is_active, bool):
+                raise HTTPException(status_code=503, detail="Trusted authority status is invalid")
+            if not authority_is_active:
+                return EvaluateResponse(
+                    decision="BLOCK",
+                    reason="AUTHORITY_REVOKED",
+                    applied=False,
+                    effect="NOT_EXECUTED",
+                )
+
+        # Claim nonce only after request, authority status, evidence, and the final
+        # context re-read have passed. A blocked authority does not consume the nonce.
         if request.authority.expires_at is not None and request.authority.nonce is not None:
             _claim_authority_nonce(
                 request.authority.authority_id,
@@ -598,7 +650,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.6"}
+    return {"status": "healthy", "version": "0.1.7"}
 
 
 def run_server(host: str = None, port: int = None):
