@@ -1,4 +1,3 @@
-from pathlib import Path
 """
 State Drift Experiment — EGA Authorization vs ComOS Execution
 
@@ -11,7 +10,10 @@ Critical difference from test_comos_ega_integration.py:
 - This tests whether ComOS uses authorization-time evidence OR execution-time state
 """
 
+from pathlib import Path
+
 import json
+import hashlib
 import os
 import time
 from dataclasses import dataclass
@@ -101,7 +103,7 @@ class ObserverStyleAdapter:
         """Convert ComOS product state to EGA EvidenceItem."""
         return EvidenceItem(
             evidence_ref=evidence_ref,
-            digest=f"sha256-{hash(json.dumps(product, sort_keys=True))}",  # Simulated digest
+            digest=f"sha256-{hashlib.sha256(json.dumps(product, sort_keys=True, separators=(\",\", \":\")).encode()).hexdigest()}",  # Deterministic test digest, not a signed Observer envelope
             observed_at=time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             evaluation_status="USED",
             role="commit_condition",
