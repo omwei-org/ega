@@ -20,7 +20,7 @@ Security features (v0.1.9):
 - Trusted context version provider required; re-read before final authority check
 - Binds to 127.0.0.1 by default
 - Generic error messages (no internal details leaked)
-- HTTP authentication not implemented (requires network security layer)
+- /v1/evaluate requires a configured EGA_API_BEARER_TOKEN; use TLS outside loopback
 
 Security limitations (v0.1.9 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
