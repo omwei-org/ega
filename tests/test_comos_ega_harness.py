@@ -629,28 +629,13 @@ def test_ega_malformed_response():
     assert len(effects) == 0
 
 
-def test_no_simulated_effect_on_rejection():
+def test_service_replay_ledger_not_covered_by_model_harness():
     """
-    Test T9: No simulated protected effect on any rejection or indeterminate result.
-
-    This is a documentation placeholder - individual tests above already verify
-    that each rejection path results in 0 simulated effects.
-    The contract is: EGA BLOCK → no per-act charge, no enqueue, no record insert.
+    The HTTP service has a SQLite replay ledger, but this simulated adapter
+    harness uses the core ExecutionAuthority model and does not exercise it.
+    Replay behavior is covered separately by the service-level HTTP tests.
     """
-    assert True
-
-
-def test_replay_detection_not_implemented():
-    """
-    Test T10: Replayed nonce (NOT YET IMPLEMENTED in EGA).
-
-    Expected: NOT TESTABLE - EGA model does not yet support nonce/replay detection.
-    This test documents the limitation.
-    """
-    # EGA ExecutionAuthority does not have a nonce field
-    # Replay protection must be added to EGA model before this can be tested
-    # See comos-ega-integration-contract.md Phase 2 for roadmap
-    pytest.skip("EGA model does not yet support nonce/replay detection")
+    pytest.skip("Service replay protection is tested at the HTTP boundary, not in this simulated harness")
 
 
 if __name__ == "__main__":
