@@ -26,6 +26,7 @@ from ega.interop import (
 # Set environment variables for testing BEFORE importing the app
 os.environ["EGA_FAIL_CLOSED"] = "false"
 os.environ["EGA_TRUSTED_AUTHORITY_IDS"] = ""
+os.environ["EGA_API_BEARER_TOKEN"] = "test-api-token"
 
 from fastapi import HTTPException
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -42,7 +43,7 @@ service.CONTEXT_VERSION_PROVIDER = lambda request: request.context_epoch  # test
 service.AUTHORITY_STATUS_PROVIDER = lambda authority_id: True  # test-only active-authority stub
 
 # Test client
-client = TestClient(app)
+client = TestClient(app, headers={"Authorization": "Bearer test-api-token"})
 
 @pytest.fixture(autouse=True)
 def isolate_authority_replay_ledger(tmp_path, monkeypatch):
