@@ -50,8 +50,9 @@ from ega.models import (
 class EGAServiceTestClient:
     """Test client for EGA HTTP service."""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:8000"):
+    def __init__(self, base_url: str = "http://127.0.0.1:8000", api_token: str | None = "test-api-token"):
         self.base_url = base_url
+        self.api_token = api_token
 
     def evaluate(
         self,
@@ -78,7 +79,8 @@ class EGAServiceTestClient:
         if evidence_envelopes:
             payload["intent"]["evidence_envelopes"] = evidence_envelopes
 
-        response = requests.post(url, json=payload, timeout=5)
+        headers = {"Authorization": f"Bearer {self.api_token}"} if self.api_token is not None else {}
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
         response.raise_for_status()
         return response.json()
 
@@ -185,6 +187,7 @@ def ega_service():
     env = {
         "EGA_HOST": "127.0.0.1",
         "EGA_PORT": "8000",
+        "EGA_API_BEARER_TOKEN": "test-api-token",
         "EGA_TRUSTED_AUTHORITY_IDS": "test-auth-001,test-auth-002",  # Test-only whitelist
         "EGA_FAIL_CLOSED": "true",
         # Explicitly unsafe authority bypass is confined to this isolated test
