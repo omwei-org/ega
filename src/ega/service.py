@@ -13,7 +13,7 @@ Architecture:
 Security features (v0.1.6):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Signed authorities require an expiry interval and matching service audience
-- Evaluation disabled by default when no trusted verification keys are configured
+- Evaluation fails closed when no trusted verification keys or context provider are configured
 - AEE conditions require Observer v1 evidence or block
 - Evidence converted using existing observer_v1_envelope_to_evidence()
 - AEE conditions evaluated against converted evidence
@@ -33,7 +33,7 @@ Configuration:
 - EGA_AUTHORITY_PUBLIC_KEYS_JSON: JSON map of authority IDs to base64 raw Ed25519 public keys (default: empty)
 - EGA_FAIL_CLOSED: Reject unknown IDs in unsafe test mode (default: true)
 - EGA_ALLOW_UNVERIFIED_AUTHORITY: Explicitly unsafe test/demo bypass if no keys are configured (default: false)
-- EGA_MAX_CONTEXT_AGE_SECONDS: Max allowed age for context epoch (default: 300)
+- EGA_MAX_CONTEXT_AGE_SECONDS: Max allowed age for evidence observations (default: 300)
 - EGA_MAX_AUTHORITY_TTL_SECONDS: Maximum signed authority lifetime (default: 300)
 - EGA_AUTHORITY_CLOCK_SKEW_SECONDS: Allowed future issue-time skew (default: 5)
 - EGA_SERVICE_AUDIENCE: Required authority audience (default: ega-service)
@@ -123,12 +123,6 @@ class EvidenceEnvelopeRequest(BaseModel):
     integrity: Dict[str, Any]
 
 class AEEConditionRequest(BaseModel):
-    condition_id: str
-    evidence_ref: str
-    state_equals: Optional[str] = None
-    freshness_equals: Optional[str] = None
-    uncertainty_max: Optional[float] = None
-    value_equals: Optional[Any] = None
     condition_id: str
     evidence_ref: str
     state_equals: Optional[str] = None
