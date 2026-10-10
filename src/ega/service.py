@@ -630,7 +630,7 @@ async def evaluate(request: EvaluateRequest):
         # effect atomic with this decision.
         if signed_authority_mode:
             try:
-                authority_is_active = authority_status_provider(request.authority)
+                authority_is_active = authority_status_provider(_authority_status_query(request.authority))
             except Exception as exc:
                 raise HTTPException(
                     status_code=503,
