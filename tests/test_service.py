@@ -104,7 +104,7 @@ def test_health_check():
     """Health check endpoint works."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "version": "0.1.4"}
+    assert response.json() == {"status": "healthy", "version": "0.1.6"}
 
 
 def test_evaluate_valid_authority():
@@ -353,11 +353,12 @@ def test_evaluate_with_expected_total_coms():
     assert data["decision"] == "COMMIT"
 
 
-def test_evaluate_epoch_change_blocks():
-    """Context epoch staleness is detected using system time (v0.1.2)."""
-    # This test verifies that stale context epochs are detected
+
+def test_evaluate_epoch_change_blocks(monkeypatch):
+    """A caller snapshot version that differs from trusted current context blocks."""
     current_time = int(datetime.now(timezone.utc).timestamp())
-    stale_time = current_time - 400  # 400 seconds ago (beyond default 300s threshold)
+    stale_version = current_time - 400
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", lambda request: current_time)
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -377,13 +378,13 @@ def test_evaluate_epoch_change_blocks():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=stale_time
+        context_epoch=stale_version
     )
-
     response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.2: stale context should block
-    assert response.status_code == 400
-    assert "stale" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    assert response.json()["decision"] == "BLOCK"
+    assert response.json()["reason"] == "STALE_CONTEXT"
+    assert response.json()["effect"] == "NOT_EXECUTED"
 
 
 def test_evaluate_with_aee_conditions():
@@ -879,34 +880,16 @@ def test_aee_wrong_evidence_ref_blocks():
     assert "AEE_EVIDENCE_UNAVAILABLE" in data["reason"]
 
 
-def test_context_staleness_detection():
-    """Stale context epoch blocks (v0.1.2)."""
-    request = EvaluateRequest(
-        intent=RuntimeIntentRequest(
-            principal="buyer-123",
-            action="retail_sale",
-            target="tenant-456",
-            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
-            environment="production",
-            decision_ref="decision-001"
-        ),
-        authority=ExecutionAuthorityRequest(
-            authority_id="auth-001",
-            principal="buyer-123",
-            action="retail_sale",
-            target="tenant-456",
-            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
-            environment="production",
-            source_decision="decision-001",
-            status="VALID"
-        ),
-        context_epoch=int((datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp())  # 10 minutes ago
-    )
 
-    response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.2: stale context should block
-    assert response.status_code == 400
-    assert "stale" in response.json()["detail"].lower()
+def test_context_staleness_detection(monkeypatch):
+    """A stale caller context version is blocked by the trusted provider."""
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", lambda request: 42)
+    payload = _valid_context_evaluate_payload(context_epoch=41)
+    response = client.post("/v1/evaluate", json=payload)
+    assert response.status_code == 200
+    assert response.json()["decision"] == "BLOCK"
+    assert response.json()["reason"] == "STALE_CONTEXT"
+    assert response.json()["effect"] == "NOT_EXECUTED"
 
 
 def test_malformed_evidence_envelope_blocks():
@@ -1041,38 +1024,16 @@ def test_future_dated_evidence_rejected():
     assert "future" in response.json()["detail"].lower()
 
 
-def test_context_epoch_future_rejected():
-    """Future-dated context epoch is rejected (v0.1.2.1 fix)."""
-    from datetime import timedelta
-    current_time = int(datetime.now(timezone.utc).timestamp())
-    future_time = current_time + 600  # 10 minutes in the future
 
-    request = EvaluateRequest(
-        intent=RuntimeIntentRequest(
-            principal="buyer-123",
-            action="retail_sale",
-            target="tenant-456",
-            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
-            environment="production",
-            decision_ref="decision-001"
-        ),
-        authority=ExecutionAuthorityRequest(
-            authority_id="auth-001",
-            principal="buyer-123",
-            action="retail_sale",
-            target="tenant-456",
-            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
-            environment="production",
-            source_decision="decision-001",
-            status="VALID"
-        ),
-        context_epoch=future_time
-    )
-
-    response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.2.1: future context should be rejected
-    assert response.status_code == 400
-    assert "future" in response.json()["detail"].lower()
+def test_context_epoch_future_rejected(monkeypatch):
+    """Context version semantics do not treat versions as wall-clock timestamps."""
+    # A "future" numeric value has no meaning by itself; only trusted version equality matters.
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", lambda request: 100)
+    response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(context_epoch=101))
+    assert response.status_code == 200
+    assert response.json()["decision"] == "BLOCK"
+    assert response.json()["reason"] == "STALE_CONTEXT"
+    assert response.json()["effect"] == "NOT_EXECUTED"
 
 
 def test_no_aee_conditions_evidence_optional():
