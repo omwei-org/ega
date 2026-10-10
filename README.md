@@ -162,7 +162,7 @@ This is an integration interface, not a bundled revocation service. Deployments 
 
 ### Authority status provider input (v0.1.9)
 
-The authority status provider now receives the parsed `ExecutionAuthorityRequest`, not just an `authority_id`. This lets the deployment registry check status against the exact authority instance and its relevant identity fields (for example, authority ID, source decision, nonce, AO/AEE/ECT references, validity interval, and decision-record digest), rather than accidentally treating a reused ID as the same grant.
+The authority status provider receives a typed `AuthorityStatusQuery`, including an EGA-computed SHA-256 digest of the canonical signed authority payload. The registry should bind status to `(authority_id, authority_digest)` so a reused ID cannot automatically inherit the status of a different authority instance. See `docs/AUTHORITY-STATUS-PROVIDER-CONTRACT.md`.
 
 The provider implementation remains deployment-owned. It must bind its status result to the exact fields it verifies and return `True` only for that active authority instance. The service's two checks do not eliminate a race with a later external effect.
 
