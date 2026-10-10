@@ -38,6 +38,7 @@ from ega import service
 service.TRUSTED_AUTHORITY_IDS = set()
 service.FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = False
 service.ALLOW_UNVERIFIED_AUTHORITY = True  # Explicitly unsafe mode for model/service tests
+service.CONTEXT_VERSION_PROVIDER = lambda request: request.context_epoch  # test-only trusted-provider stub
 
 # Test client
 client = TestClient(app)
@@ -1344,3 +1345,66 @@ def test_signed_authority_without_nonce_is_rejected(monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         service._validate_authority_trust(_signed_authority_request(private_key, authority))
     assert exc_info.value.status_code == 403
+
+
+
+def _valid_context_evaluate_payload(context_epoch=7):
+    return EvaluateRequest(
+        intent=RuntimeIntentRequest(
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters=Parameters(items=[ItemsItem(product_id="sku-001", quantity=1)]),
+            environment="production",
+            decision_ref="decision-001",
+        ),
+        authority=ExecutionAuthorityRequest(
+            authority_id="auth-001",
+            principal="buyer-123",
+            action="retail_sale",
+            target="tenant-456",
+            parameters={"items": [{"product_id": "sku-001", "quantity": 1}]},
+            environment="production",
+            source_decision="decision-001",
+            status="VALID",
+        ),
+        context_epoch=context_epoch,
+    ).model_dump(mode="json")
+
+
+def test_context_provider_change_between_prepare_and_final_check_blocks(monkeypatch):
+    versions = iter([7, 8])
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", lambda request: next(versions))
+    response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(7))
+    assert response.status_code == 200
+    assert response.json() == {
+        "decision": "BLOCK",
+        "reason": "STALE_CONTEXT",
+        "applied": False,
+        "effect": "NOT_EXECUTED",
+    }
+
+
+def test_context_version_mismatch_blocks_before_prepare(monkeypatch):
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", lambda request: 8)
+    response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(7))
+    assert response.status_code == 200
+    assert response.json()["decision"] == "BLOCK"
+    assert response.json()["reason"] == "STALE_CONTEXT"
+    assert response.json()["effect"] == "NOT_EXECUTED"
+
+
+def test_missing_context_provider_fails_closed(monkeypatch):
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", None)
+    response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(7))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Trusted context version provider is not configured"
+
+
+def test_context_provider_unavailable_fails_closed(monkeypatch):
+    def unavailable(_request):
+        raise RuntimeError("test-only provider failure")
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", unavailable)
+    response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(7))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Trusted context version is unavailable"
