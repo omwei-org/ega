@@ -39,6 +39,7 @@ service.TRUSTED_AUTHORITY_IDS = set()
 service.FAIL_CLOSED_ON_UNKNOWN_AUTHORITY = False
 service.ALLOW_UNVERIFIED_AUTHORITY = True  # Explicitly unsafe mode for model/service tests
 service.CONTEXT_VERSION_PROVIDER = lambda request: request.context_epoch  # test-only trusted-provider stub
+service.AUTHORITY_STATUS_PROVIDER = lambda authority_id: True  # test-only active-authority stub
 
 # Test client
 client = TestClient(app)
@@ -104,7 +105,7 @@ def test_health_check():
     """Health check endpoint works."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "version": "0.1.6"}
+    assert response.json() == {"status": "healthy", "version": "0.1.7"}
 
 
 def test_evaluate_valid_authority():
@@ -1389,3 +1390,68 @@ def test_context_provider_failure_on_final_read_fails_closed(monkeypatch):
     assert response.status_code == 503
     assert response.json()["detail"] == "Trusted context version is unavailable"
     assert calls["count"] == 2
+
+
+
+def _signed_evaluate_payload(private_key, context_epoch=7):
+    payload = _valid_context_evaluate_payload(context_epoch)
+    authority = _signed_authority_request(private_key)
+    payload["authority"] = authority.model_dump(mode="json")
+    return payload
+
+
+def _install_signed_authority_key(monkeypatch, private_key):
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    monkeypatch.setenv(
+        "EGA_AUTHORITY_PUBLIC_KEYS_JSON",
+        json.dumps({"auth-001": base64.b64encode(public_key).decode("ascii")}),
+    )
+
+
+def test_signed_authority_requires_status_provider(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    _install_signed_authority_key(monkeypatch, private_key)
+    monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", None)
+    response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Trusted authority status provider is not configured"
+
+
+def test_revoked_signed_authority_blocks(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    _install_signed_authority_key(monkeypatch, private_key)
+    monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", lambda authority_id: False)
+    response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
+    assert response.status_code == 200
+    assert response.json() == {
+        "decision": "BLOCK",
+        "reason": "AUTHORITY_REVOKED",
+        "applied": False,
+        "effect": "NOT_EXECUTED",
+    }
+
+
+def test_authority_status_provider_failure_fails_closed(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    _install_signed_authority_key(monkeypatch, private_key)
+    def unavailable(_authority_id):
+        raise RuntimeError("test-only registry outage")
+    monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", unavailable)
+    response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Trusted authority status is unavailable"
+
+
+def test_authority_revoked_between_initial_and_final_check_blocks(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    _install_signed_authority_key(monkeypatch, private_key)
+    states = iter([True, False])
+    monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", lambda authority_id: next(states))
+    response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
+    assert response.status_code == 200
+    assert response.json()["decision"] == "BLOCK"
+    assert response.json()["reason"] == "AUTHORITY_REVOKED"
+    assert response.json()["effect"] == "NOT_EXECUTED"
