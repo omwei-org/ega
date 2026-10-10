@@ -26,6 +26,7 @@ import requests
 import sys
 import hashlib
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 # Test-only trusted context snapshot. The service subprocess reads this fixed
@@ -227,6 +228,33 @@ def client(ega_service):
 # ============================================================================
 # SERVICE-LEVEL TESTS
 # ============================================================================
+
+def test_replay_nonce_is_rejected(client):
+    """A nonce accepted once by the real HTTP service cannot be reused."""
+    authority = create_test_authority(authority_id="test-auth-001")
+    authority["aee_conditions"] = None
+    authority["nonce"] = "test-replay-nonce-0001"
+    authority["expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+    intent = create_test_intent()
+
+    first = client.evaluate(
+        authority=authority,
+        intent=intent,
+        context_epoch=int(time.time()),
+        evidence_envelopes=None,
+    )
+    assert first["decision"] in ("COMMIT", "BLOCK")
+
+    with pytest.raises(requests.exceptions.HTTPError) as exc_info:
+        client.evaluate(
+            authority=authority,
+            intent=intent,
+            context_epoch=int(time.time()),
+            evidence_envelopes=None,
+        )
+    assert exc_info.value.response.status_code == 409
+    assert "already been used" in exc_info.value.response.json()["detail"].lower()
+
 
 def test_service_health(client):
     """Test that EGA service is healthy."""
