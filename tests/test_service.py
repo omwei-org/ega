@@ -1458,7 +1458,7 @@ def test_authority_revoked_between_initial_and_final_check_blocks(monkeypatch):
 
 
 
-def test_authority_status_provider_receives_full_authority_object(monkeypatch):
+def test_authority_status_provider_receives_digest_bound_query(monkeypatch):
     private_key = Ed25519PrivateKey.generate()
     _install_signed_authority_key(monkeypatch, private_key)
     observed = []
@@ -1500,3 +1500,15 @@ def test_authority_status_query_digest_binds_exact_signed_payload():
     assert len(original.authority_digest) == 64
     assert original.authority_digest != changed.authority_digest
     assert original.authority_id == changed.authority_id
+
+    # Signature bytes are excluded: the digest identifies the canonical payload,
+    # while signature authenticity is verified separately.
+    resigned = service._authority_status_query(
+        authority.model_copy(update={"signature": "different-signature-value"})
+    )
+    assert resigned.authority_digest == original.authority_digest
+
+    changed_parameters = service._authority_status_query(
+        authority.model_copy(update={"parameters": {"sku": "different"}})
+    )
+    assert changed_parameters.authority_digest != original.authority_digest
