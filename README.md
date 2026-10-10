@@ -124,7 +124,31 @@ Example key-map shape (replace the placeholder with a real public key):
 {"authority-id": "BASE64_RAW_ED25519_PUBLIC_KEY"}
 ```
 
-Do not enable `EGA_ALLOW_UNVERIFIED_AUTHORITY=true` outside isolated tests/demos. That switch bypasses signature verification when no key map is configured. The current service enforces signed authority expiry and audience, and atomically records consumed nonces in a local SQLite ledger. The ledger only protects service instances sharing the same database file; multi-host deployments need a shared strongly consistent store. Revocation, key rotation, client authentication, and a trusted live context-version provider remain unimplemented. Signature verification authenticates the signed authority payload against the provisioned key; it does not by itself establish that the authority is current or that the execution boundary enforces the resulting decision.
+Do not enable `EGA_ALLOW_UNVERIFIED_AUTHORITY=true` outside isolated tests/demos. That switch bypasses signature verification when no key map is configured. The current service enforces signed authority expiry and audience, and atomically records consumed nonces in a local SQLite ledger. The ledger only protects service instances sharing the same database file; multi-host deployments need a shared strongly consistent store. Revocation, key rotation, and HTTP client authentication remain unimplemented. A provider interface is present, but no live ComOS-backed provider is bundled. Signature verification authenticates the signed authority payload against the provisioned key; it does not by itself establish that the authority is current or that the execution boundary enforces the resulting decision.
 
 
 Replay protection configuration: set `EGA_REPLAY_DB_PATH` to a persistent writable SQLite database file. If the ledger is unavailable, the service fails closed with HTTP 503. Reusing a consumed `(authority_id, nonce)` returns HTTP 409. Do not use this local SQLite ledger as a distributed replay defense across hosts or containers without a shared filesystem and appropriate SQLite locking guarantees.
+
+## Trusted context version provider
+
+The HTTP service deliberately has no default context provider. `context_epoch` is an opaque version identifier for the caller's context snapshot, not a timestamp. The service calls the configured provider before preparation and again immediately before the final authority check. If the caller's version differs from the trusted current version, or the provider is missing, unavailable, or returns an invalid version, the service blocks or fails closed.
+
+An embedding application must install `ega.service.CONTEXT_VERSION_PROVIDER` at startup. The provider must query a trusted source of current state and derive the relevant scope from the request's intent; it must not simply return the caller-supplied `context_epoch`. For example:
+
+```python
+from ega import service
+
+def current_context_version(request: service.EvaluateRequest) -> int:
+    # Resolve the relevant tenant/resource from request.intent, then query
+    # a trusted, authoritative version source. Do not trust request.context_epoch.
+    return trusted_state_store.version_for(
+        principal=request.intent.principal,
+        action=request.intent.action,
+        target=request.intent.target,
+        environment=request.intent.environment,
+    )
+
+service.CONTEXT_VERSION_PROVIDER = current_context_version
+```
+
+The example is an integration contract, not a bundled ComOS adapter. No live ComOS context-version source is implemented in this repository. A provider re-read narrows the stale-context window but does not make the decision atomic with a later external effect. The actual execution boundary must independently enforce current context and authority at the point of effect; the EGA service returns a decision and does not execute the effect.
