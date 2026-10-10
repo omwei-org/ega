@@ -27,6 +27,7 @@ import sys
 import hashlib
 import json
 import uuid
+import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
@@ -180,6 +181,7 @@ def ega_service():
     global TEST_CONTEXT_EPOCH
     TEST_CONTEXT_EPOCH = int(time.time())
 
+    replay_dir = tempfile.TemporaryDirectory(prefix="ega-service-test-replay-")
     env = {
         "EGA_HOST": "127.0.0.1",
         "EGA_PORT": "8000",
@@ -189,6 +191,8 @@ def ega_service():
         # process. Production defaults remain fail-closed.
         "EGA_ALLOW_UNVERIFIED_AUTHORITY": "true",
         "EGA_TEST_CONTEXT_VERSION": str(TEST_CONTEXT_EPOCH),
+        # Keep test nonce records out of the repository/default service ledger.
+        "EGA_REPLAY_DB_PATH": str(Path(replay_dir.name) / "replay.sqlite3"),
     }
     bootstrap = (
         "import os; import ega.service as service; "
@@ -218,6 +222,7 @@ def ega_service():
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
+    replay_dir.cleanup()
 
 
 @pytest.fixture
