@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from typing import Any
 import subprocess
 import sys
+import socket
+import pytest
 
 # Add EGA src to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -37,6 +39,15 @@ from ega.authority import issue_authority
 from ega.boundary import commit, execution_attestation, prepare
 from ega.interop import EvidenceEnvelope, evidence_envelope_integrity_ref, evidence_envelope_to_evidence
 from ega.models import AEECondition, AuthorizationScope, DecisionRecord, RuntimeIntent, EvidenceItem
+
+def _comos_node_available() -> bool:
+    """Return whether the live ComOS node is reachable for opt-in E2E tests."""
+    try:
+        with socket.create_connection(("127.0.0.1", 9101), timeout=1):
+            return True
+    except OSError:
+        return False
+
 
 
 # ComOS MCP client for local node
@@ -190,6 +201,11 @@ class ExperimentalExecutionGate:
 
 
 def test_comos_ega_integration():
+    if not _comos_node_available():
+        if __name__ != "__main__":
+            pytest.skip("Live ComOS node is unavailable on 127.0.0.1:9101")
+        print("Skipping live ComOS experiment: node unavailable on 127.0.0.1:9101")
+        return
     """
     End-to-end integration test of EGA × ComOS.
 
