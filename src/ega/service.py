@@ -30,6 +30,7 @@ Security limitations (v0.1.9 - ARCHITECTURAL):
 Configuration:
 - EGA_HOST: Bind address (default: 127.0.0.1)
 - EGA_PORT: Port (default: 8000)
+- EGA_API_BEARER_TOKEN: Required bearer credential for /v1/evaluate; unset disables evaluation; store as a secret and use TLS outside loopback
 - EGA_AUTHORITY_PUBLIC_KEYS_JSON: JSON map of authority IDs to base64 raw Ed25519 public keys (default: empty)
 - EGA_FAIL_CLOSED: Reject unknown IDs in unsafe test mode (default: true)
 - EGA_ALLOW_UNVERIFIED_AUTHORITY: Explicitly unsafe test/demo bypass if no keys are configured (default: false)
