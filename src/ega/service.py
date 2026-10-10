@@ -51,6 +51,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Set
 import hashlib
+import hmac
 import json
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
