@@ -541,6 +541,9 @@ async def evaluate(request: EvaluateRequest, http_request: Request):
     against a specific runtime intent.
     """
     try:
+        # Authenticate the caller before processing the authority or intent.
+        _authenticate_caller(http_request.headers.get("authorization"))
+
         # Convert Pydantic models to EGA models
         intent = _convert_intent(request.intent)
         authority = _convert_authority(request.authority)
