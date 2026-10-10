@@ -160,7 +160,7 @@ When `EGA_AUTHORITY_PUBLIC_KEYS_JSON` enables signed-authority mode, the service
 This is an integration interface, not a bundled revocation service. Deployments must implement it against an authoritative registry. The second read narrows the revocation window but does not make the decision atomic with a later external effect. The execution boundary must still verify current authority at the point of effect.
 
 
-### Authority status provider input (v0.1.8)
+### Authority status provider input (v0.1.9)
 
 The authority status provider now receives the parsed `ExecutionAuthorityRequest`, not just an `authority_id`. This lets the deployment registry check status against the exact authority instance and its relevant identity fields (for example, authority ID, source decision, nonce, AO/AEE/ECT references, validity interval, and decision-record digest), rather than accidentally treating a reused ID as the same grant.
 
