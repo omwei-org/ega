@@ -44,6 +44,13 @@ service.AUTHORITY_STATUS_PROVIDER = lambda authority_id: True  # test-only activ
 # Test client
 client = TestClient(app)
 
+@pytest.fixture(autouse=True)
+def isolate_authority_replay_ledger(tmp_path, monkeypatch):
+    """Keep nonce-replay state isolated between tests."""
+    monkeypatch.setattr(service, "REPLAY_DB_PATH", str(tmp_path / "replay.sqlite3"))
+
+
+
 
 def _golden_observer_envelope() -> dict:
     """Golden Observer v1 envelope from reference package."""
