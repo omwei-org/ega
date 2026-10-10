@@ -23,6 +23,7 @@ What this does NOT prove:
 """
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -41,7 +42,9 @@ from ega.interop import EvidenceEnvelope, evidence_envelope_integrity_ref, evide
 from ega.models import AEECondition, AuthorizationScope, DecisionRecord, RuntimeIntent, EvidenceItem
 
 def _comos_node_available() -> bool:
-    """Return whether the live ComOS node is reachable for opt-in E2E tests."""
+    """Return whether an explicitly opted-in local ComOS endpoint is reachable."""
+    if os.environ.get("EGA_RUN_LIVE_COMOS") != "1":
+        return False
     try:
         with socket.create_connection(("127.0.0.1", 9101), timeout=1):
             return True
@@ -203,8 +206,8 @@ class ExperimentalExecutionGate:
 def test_comos_ega_integration():
     if not _comos_node_available():
         if __name__ != "__main__":
-            pytest.skip("Live ComOS node is unavailable on 127.0.0.1:9101")
-        print("Skipping live ComOS experiment: node unavailable on 127.0.0.1:9101")
+            pytest.skip("live ComOS test not opted in (set EGA_RUN_LIVE_COMOS=1) or node unavailable on 127.0.0.1:9101")
+        print("Skipping live ComOS experiment: set EGA_RUN_LIVE_COMOS=1 and start node on 127.0.0.1:9101")
         return
     """
     End-to-end integration test of EGA × ComOS.
