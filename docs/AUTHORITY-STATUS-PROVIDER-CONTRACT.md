@@ -6,14 +6,14 @@ Status: **integration contract; no production registry implementation is bundled
 
 Signature verification proves that an authority object was signed by a configured key. It does not prove that the authority remains active. In signed-authority mode, EGA calls `AUTHORITY_STATUS_PROVIDER` twice: before context/evidence evaluation and again immediately before returning its decision.
 
-The provider receives the parsed `ExecutionAuthorityRequest`, not only `authority_id`. It MUST determine status for that exact signed authority instance.
+The provider receives a typed `AuthorityStatusQuery`, not the raw request. It includes `authority_id`, a SHA-256 `authority_digest` computed from the canonical authority payload (all fields except signature), nonce, source decision, validity interval, audience, and AO/AEE/ECT and decision-record references. It MUST determine status for that exact signed authority instance.
 
 ## Required provider behavior
 
 The deployment-owned provider MUST:
 
 1. Recompute the authority's canonical payload using the same serialization as signature verification: JSON with sorted keys, separators `,` and `:`, UTF-8, and all authority fields except `signature`.
-2. Bind the registry lookup to at least the authority ID and a digest of that canonical payload. The digest must not be taken from an untrusted caller field.
+2. Bind the registry lookup to both `authority_id` and `authority_digest`. EGA computes the digest from the parsed request; it is not accepted from an untrusted caller field.
 3. Return `True` only when that exact authority instance is registered as active and not revoked. Return `False` for revoked, unknown, superseded, or mismatched instances.
 4. Fail by raising an exception when the registry is unavailable or cannot establish status. EGA returns HTTP 503; the provider must not translate an outage into `True`.
 5. Use a registry with authenticated transport and access controls. A process-local dictionary or client-supplied `status` field is not a production revocation source.
