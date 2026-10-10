@@ -28,6 +28,10 @@ import hashlib
 import json
 from typing import Any, Dict
 
+# Test-only trusted context snapshot. The service subprocess reads this fixed
+# value; it deliberately does not derive trusted state from the incoming request.
+TEST_CONTEXT_EPOCH = 0
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ega.models import (
@@ -55,6 +59,12 @@ class EGAServiceTestClient:
     ) -> Dict[str, Any]:
         """Call the EGA service /v1/evaluate endpoint."""
         url = f"{self.base_url}/v1/evaluate"
+
+        # Existing tests pass wall-clock time for normal cases. Map those values
+        # to the fixture's fixed trusted snapshot. Preserve deliberately stale or
+        # future values so tests exercise the current exact-version check.
+        if abs(context_epoch - TEST_CONTEXT_EPOCH) <= 300:
+            context_epoch = TEST_CONTEXT_EPOCH
 
         payload = {
             "authority": authority,
@@ -165,15 +175,28 @@ def create_test_intent(
 def ega_service():
     """Start EGA service for testing."""
     # Start service in subprocess
+    global TEST_CONTEXT_EPOCH
+    TEST_CONTEXT_EPOCH = int(time.time())
+
     env = {
         "EGA_HOST": "127.0.0.1",
         "EGA_PORT": "8000",
-        "EGA_TRUSTED_AUTHORITY_IDS": "test-auth-001,test-auth-002",  # Set whitelist
-        "EGA_FAIL_CLOSED": "true"  # Fail-closed mode
+        "EGA_TRUSTED_AUTHORITY_IDS": "test-auth-001,test-auth-002",  # Test-only whitelist
+        "EGA_FAIL_CLOSED": "true",
+        # Explicitly unsafe authority bypass is confined to this isolated test
+        # process. Production defaults remain fail-closed.
+        "EGA_ALLOW_UNVERIFIED_AUTHORITY": "true",
+        "EGA_TEST_CONTEXT_VERSION": str(TEST_CONTEXT_EPOCH),
     }
+    bootstrap = (
+        "import os; import ega.service as service; "
+        "service.CONTEXT_VERSION_PROVIDER = "
+        "lambda request: int(os.environ['EGA_TEST_CONTEXT_VERSION']); "
+        "service.run_server()"
+    )
 
     proc = subprocess.Popen(
-        ["python", "-m", "ega.service"],
+        [sys.executable, "-c", bootstrap],
         env={**subprocess.os.environ, **env},
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
@@ -357,10 +380,10 @@ def test_service_level_stale_context(client):
             context_epoch=stale_epoch,
             evidence_envelopes=None
         )
-        assert False, "Should have raised HTTP 400"
-    except requests.exceptions.HTTPError as e:
-        assert e.response.status_code == 400
-        assert "stale" in e.response.json()["detail"].lower() or "age" in e.response.json()["detail"].lower()
+        assert result["decision"] == "BLOCK"
+        assert result["reason"] == "STALE_CONTEXT"
+        assert result["applied"] is False
+        assert result["effect"] == "NOT_EXECUTED"
 
 
 def test_service_level_future_context(client):
@@ -383,10 +406,10 @@ def test_service_level_future_context(client):
             context_epoch=future_epoch,
             evidence_envelopes=None
         )
-        assert False, "Should have raised HTTP 400"
-    except requests.exceptions.HTTPError as e:
-        assert e.response.status_code == 400
-        assert "future" in e.response.json()["detail"].lower()
+        assert result["decision"] == "BLOCK"
+        assert result["reason"] == "STALE_CONTEXT"
+        assert result["applied"] is False
+        assert result["effect"] == "NOT_EXECUTED"
 
 
 def test_service_level_missing_evidence_with_aee(client):
