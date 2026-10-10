@@ -266,6 +266,30 @@ def test_replay_nonce_is_rejected(client):
     assert "already been used" in exc_info.value.response.json()["detail"].lower()
 
 
+def test_missing_caller_token_is_rejected(client):
+    """The HTTP API rejects requests without a bearer credential."""
+    unauthenticated = EGAServiceTestClient(client.base_url, api_token=None)
+    with pytest.raises(requests.exceptions.HTTPError) as exc_info:
+        unauthenticated.evaluate(
+            authority=create_test_authority(),
+            intent=create_test_intent(),
+            context_epoch=TEST_CONTEXT_EPOCH,
+        )
+    assert exc_info.value.response.status_code == 401
+
+
+def test_invalid_caller_token_is_rejected(client):
+    """The HTTP API rejects an invalid bearer credential."""
+    unauthenticated = EGAServiceTestClient(client.base_url, api_token="wrong-token")
+    with pytest.raises(requests.exceptions.HTTPError) as exc_info:
+        unauthenticated.evaluate(
+            authority=create_test_authority(),
+            intent=create_test_intent(),
+            context_epoch=TEST_CONTEXT_EPOCH,
+        )
+    assert exc_info.value.response.status_code == 401
+
+
 def test_service_health(client):
     """Test that EGA service is healthy."""
     health = client.health()
