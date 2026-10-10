@@ -1366,3 +1366,26 @@ def test_context_provider_unavailable_fails_closed(monkeypatch):
     response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(7))
     assert response.status_code == 503
     assert response.json()["detail"] == "Trusted context version is unavailable"
+
+
+
+def test_context_provider_invalid_version_fails_closed(monkeypatch):
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", lambda request: True)
+    response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(1))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Trusted context version is invalid"
+
+
+def test_context_provider_failure_on_final_read_fails_closed(monkeypatch):
+    calls = {"count": 0}
+    def fails_on_second_read(_request):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return 7
+        raise RuntimeError("test-only second-read failure")
+
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", fails_on_second_read)
+    response = client.post("/v1/evaluate", json=_valid_context_evaluate_payload(7))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Trusted context version is unavailable"
+    assert calls["count"] == 2
