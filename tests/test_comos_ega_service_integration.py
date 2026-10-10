@@ -373,17 +373,16 @@ def test_service_level_stale_context(client):
     # Use stale context epoch (older than MAX_CONTEXT_AGE_SECONDS)
     stale_epoch = int(time.time()) - 400  # 400 seconds ago (MAX is 300)
 
-    try:
-        result = client.evaluate(
-            authority=authority,
-            intent=intent,
-            context_epoch=stale_epoch,
-            evidence_envelopes=None
-        )
-        assert result["decision"] == "BLOCK"
-        assert result["reason"] == "STALE_CONTEXT"
-        assert result["applied"] is False
-        assert result["effect"] == "NOT_EXECUTED"
+    result = client.evaluate(
+        authority=authority,
+        intent=intent,
+        context_epoch=stale_epoch,
+        evidence_envelopes=None
+    )
+    assert result["decision"] == "BLOCK"
+    assert result["reason"] == "STALE_CONTEXT"
+    assert result["applied"] is False
+    assert result["effect"] == "NOT_EXECUTED"
 
 
 def test_service_level_future_context(client):
@@ -399,17 +398,16 @@ def test_service_level_future_context(client):
     # Use future context epoch
     future_epoch = int(time.time()) + 400  # 400 seconds in future
 
-    try:
-        result = client.evaluate(
-            authority=authority,
-            intent=intent,
-            context_epoch=future_epoch,
-            evidence_envelopes=None
-        )
-        assert result["decision"] == "BLOCK"
-        assert result["reason"] == "STALE_CONTEXT"
-        assert result["applied"] is False
-        assert result["effect"] == "NOT_EXECUTED"
+    result = client.evaluate(
+        authority=authority,
+        intent=intent,
+        context_epoch=future_epoch,
+        evidence_envelopes=None
+    )
+    assert result["decision"] == "BLOCK"
+    assert result["reason"] == "STALE_CONTEXT"
+    assert result["applied"] is False
+    assert result["effect"] == "NOT_EXECUTED"
 
 
 def test_service_level_missing_evidence_with_aee(client):
