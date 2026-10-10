@@ -12,8 +12,8 @@ The provider receives a typed `AuthorityStatusQuery`, not the raw request. It in
 
 The deployment-owned provider MUST:
 
-1. Recompute the authority's canonical payload using the same serialization as signature verification: JSON with sorted keys, separators `,` and `:`, UTF-8, and all authority fields except `signature`.
-2. Bind the registry lookup to both `authority_id` and `authority_digest`. EGA computes the digest from the parsed request; it is not accepted from an untrusted caller field.
+1. At authority issuance/registration time, compute and persist the digest using the same canonicalization as signature verification: JSON with sorted keys, separators `,` and `:`, UTF-8, and all authority fields except `signature`.
+2. At evaluation time, look up the registered record by both `authority_id` and the EGA-supplied `authority_digest`. Do not recompute a digest from the reduced query fields, and do not accept a digest copied from an untrusted caller field.
 3. Return `True` only when that exact authority instance is registered as active and not revoked. Return `False` for revoked, unknown, superseded, or mismatched instances.
 4. Fail by raising an exception when the registry is unavailable or cannot establish status. EGA returns HTTP 503; the provider must not translate an outage into `True`.
 5. Use a registry with authenticated transport and access controls. A process-local dictionary or client-supplied `status` field is not a production revocation source.
