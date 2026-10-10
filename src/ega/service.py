@@ -10,7 +10,7 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.7):
+Security features (v0.1.8):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Signed authorities require an expiry interval and matching service audience
 - Evaluation fails closed when no trusted verification keys or context provider are configured
@@ -22,7 +22,7 @@ Security features (v0.1.7):
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.7 - ARCHITECTURAL):
+Security limitations (v0.1.8 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
 - Revocation and key rotation are not implemented
 - Public keys must be provisioned out-of-band; no authority issuance API
@@ -88,7 +88,7 @@ CONTEXT_VERSION_PROVIDER: Optional[Callable[["EvaluateRequest"], int]] = None
 
 # Required for signed-authority deployments. Query a trusted authority registry;
 # return True only when this exact authority_id remains active and not revoked.
-AUTHORITY_STATUS_PROVIDER: Optional[Callable[[str], bool]] = None
+AUTHORITY_STATUS_PROVIDER: Optional[Callable[["ExecutionAuthorityRequest"], bool]] = None
 
 
 # Pydantic models for request/response validation
@@ -180,7 +180,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.7"
+    version="0.1.8"
 )
 
 
@@ -496,7 +496,7 @@ async def evaluate(request: EvaluateRequest):
             )
         if signed_authority_mode:
             try:
-                authority_is_active = authority_status_provider(request.authority.authority_id)
+                authority_is_active = authority_status_provider(request.authority)
             except Exception as exc:
                 raise HTTPException(
                     status_code=503,
@@ -650,7 +650,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.7"}
+    return {"status": "healthy", "version": "0.1.8"}
 
 
 def run_server(host: str = None, port: int = None):
