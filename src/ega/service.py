@@ -10,7 +10,7 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.8):
+Security features (v0.1.9):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Signed authorities require an expiry interval and matching service audience
 - Evaluation fails closed when no trusted verification keys or context provider are configured
@@ -22,7 +22,7 @@ Security features (v0.1.8):
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.8 - ARCHITECTURAL):
+Security limitations (v0.1.9 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
 - Revocation provider interface exists but no production registry is bundled; key rotation is not implemented
 - Public keys must be provisioned out-of-band; no authority issuance API
@@ -50,6 +50,8 @@ Usage:
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Set
+import hashlib
+import json
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 import uvicorn
@@ -88,7 +90,7 @@ CONTEXT_VERSION_PROVIDER: Optional[Callable[["EvaluateRequest"], int]] = None
 
 # Required for signed-authority deployments. Query a trusted authority registry;
 # return True only when this exact authority_id remains active and not revoked.
-AUTHORITY_STATUS_PROVIDER: Optional[Callable[["ExecutionAuthorityRequest"], bool]] = None
+AUTHORITY_STATUS_PROVIDER: Optional[Callable[["AuthorityStatusQuery"], bool]] = None
 
 
 # Pydantic models for request/response validation
@@ -164,6 +166,44 @@ class ExecutionAuthorityRequest(BaseModel):
             raise ValueError('only VALID status is accepted for evaluation')
         return v
 
+class AuthorityStatusQuery(BaseModel):
+    """Exact signed authority identity supplied to a trusted status registry."""
+    authority_id: str
+    authority_digest: str
+    nonce: str
+    source_decision: str
+    issued_at: datetime
+    expires_at: datetime
+    audience: str
+    ao_ref: Optional[str] = None
+    aee_ref: Optional[str] = None
+    ect_ref: Optional[str] = None
+    decision_record_ref: Optional[str] = None
+    decision_record_digest: Optional[str] = None
+
+
+def _authority_status_query(authority: ExecutionAuthorityRequest) -> AuthorityStatusQuery:
+    """Build a registry query bound to the canonical signed authority payload."""
+    payload = authority.model_dump(exclude={"signature"}, mode="json")
+    canonical_payload = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return AuthorityStatusQuery(
+        authority_id=authority.authority_id,
+        authority_digest=hashlib.sha256(canonical_payload).hexdigest(),
+        nonce=authority.nonce,
+        source_decision=authority.source_decision,
+        issued_at=authority.issued_at,
+        expires_at=authority.expires_at,
+        audience=authority.audience,
+        ao_ref=authority.ao_ref,
+        aee_ref=authority.aee_ref,
+        ect_ref=authority.ect_ref,
+        decision_record_ref=authority.decision_record_ref,
+        decision_record_digest=authority.decision_record_digest,
+    )
+
+
 class EvaluateRequest(BaseModel):
     intent: RuntimeIntentRequest
     authority: ExecutionAuthorityRequest
@@ -180,7 +220,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.8"
+    version="0.1.9"
 )
 
 
@@ -496,7 +536,7 @@ async def evaluate(request: EvaluateRequest):
             )
         if signed_authority_mode:
             try:
-                authority_is_active = authority_status_provider(request.authority)
+                authority_is_active = authority_status_provider(_authority_status_query(request.authority))
             except Exception as exc:
                 raise HTTPException(
                     status_code=503,
@@ -650,7 +690,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.8"}
+    return {"status": "healthy", "version": "0.1.9"}
 
 
 def run_server(host: str = None, port: int = None):
