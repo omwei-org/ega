@@ -124,7 +124,7 @@ Example key-map shape (replace the placeholder with a real public key):
 {"authority-id": "BASE64_RAW_ED25519_PUBLIC_KEY"}
 ```
 
-Do not enable `EGA_ALLOW_UNVERIFIED_AUTHORITY=true` outside isolated tests/demos. That switch bypasses signature verification when no key map is configured. The current service enforces signed authority expiry and audience, and atomically records consumed nonces in a local SQLite ledger. The ledger only protects service instances sharing the same database file; multi-host deployments need a shared strongly consistent store. Revocation, key rotation, and HTTP client authentication remain unimplemented. A provider interface is present, but no live ComOS-backed provider is bundled. Signature verification authenticates the signed authority payload against the provisioned key; it does not by itself establish that the authority is current or that the execution boundary enforces the resulting decision.
+Do not enable `EGA_ALLOW_UNVERIFIED_AUTHORITY=true` outside isolated tests/demos. That switch bypasses signature verification when no key map is configured. The current service enforces signed authority expiry and audience, and atomically records consumed nonces in a local SQLite ledger. The ledger only protects service instances sharing the same database file; multi-host deployments need a shared strongly consistent store. Key rotation and HTTP client authentication remain unimplemented. Authority-status and context-version provider interfaces exist, but no live ComOS-backed providers are bundled. Signature verification authenticates the signed authority payload against the provisioned key; it does not by itself establish that the authority is current or that the execution boundary enforces the resulting decision.
 
 
 Replay protection configuration: set `EGA_REPLAY_DB_PATH` to a persistent writable SQLite database file. If the ledger is unavailable, the service fails closed with HTTP 503. Reusing a consumed `(authority_id, nonce)` returns HTTP 409. Do not use this local SQLite ledger as a distributed replay defense across hosts or containers without a shared filesystem and appropriate SQLite locking guarantees.
@@ -152,3 +152,9 @@ service.CONTEXT_VERSION_PROVIDER = current_context_version
 ```
 
 The example is an integration contract, not a bundled ComOS adapter. No live ComOS context-version source is implemented in this repository. A provider re-read narrows the stale-context window but does not make the decision atomic with a later external effect. The actual execution boundary must independently enforce current context and authority at the point of effect; the EGA service returns a decision and does not execute the effect.
+
+## Trusted authority status and revocation
+
+When `EGA_AUTHORITY_PUBLIC_KEYS_JSON` enables signed-authority mode, the service also requires `ega.service.AUTHORITY_STATUS_PROVIDER`. The provider must query a trusted authority registry and return a boolean indicating whether the specified authority ID is currently active and not revoked. EGA checks status before context evaluation and again immediately before returning its decision. Missing or unavailable status fails closed; a revoked authority returns `BLOCK / AUTHORITY_REVOKED`.
+
+This is an integration interface, not a bundled revocation service. Deployments must implement it against an authoritative registry. The second read narrows the revocation window but does not make the decision atomic with a later external effect. The execution boundary must still verify current authority at the point of effect.
