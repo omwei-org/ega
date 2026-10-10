@@ -1,8 +1,16 @@
 # ComOS → EGA HTTP gate integration contract (v0.1)
 
+## Install
+
+Install the adapter dependency with `pip install -e ".[comos]"` from this repository. Install the EGA service dependencies separately with `pip install -e ".[service]"`.
+
 ## Insertion point
 
 The ComOS-side caller must invoke `EGAHTTPGate.authorize_before_effect(...)` before the first protected effect in the relevant action path. The integration audit identified `routeToolCall` and `beginPerActCharge` as the location to validate with Ron. The gate must precede charging, enqueueing, order creation, or any other protected effect.
+
+## Request contract
+
+The adapter sends `POST /v1/evaluate` with the shape `{intent, authority, context_epoch}`. The intent must satisfy EGA's `RuntimeIntentRequest` schema (`principal`, `action`, `target`, `parameters.items`, `environment`, plus optional context/evidence fields); authority must satisfy EGA's `ExecutionAuthorityRequest` schema. Observer v1 envelopes are passed as `intent.evidence_envelopes`, not as an unrelated top-level field.
 
 ## Required caller behavior
 
