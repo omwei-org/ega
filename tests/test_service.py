@@ -1476,3 +1476,13 @@ def test_authority_status_provider_receives_full_authority_object(monkeypatch):
     assert len(observed) == 2
     assert observed[0].authority_id == observed[1].authority_id
     assert observed[0].nonce == observed[1].nonce
+
+
+
+def test_authority_status_provider_non_boolean_fails_closed(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    _install_signed_authority_key(monkeypatch, private_key)
+    monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", lambda authority: "active")
+    response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Trusted authority status is invalid"
