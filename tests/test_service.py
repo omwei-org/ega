@@ -1512,3 +1512,31 @@ def test_authority_status_query_digest_binds_exact_signed_payload():
         authority.model_copy(update={"parameters": {"sku": "different"}})
     )
     assert changed_parameters.authority_digest != original.authority_digest
+
+
+def test_authority_time_window_rejects_authority_that_expires_during_evaluation():
+    now = datetime.now(timezone.utc)
+    authority = _authority_request_for_signature(
+        issued_at=now - timedelta(seconds=30),
+        expires_at=now + timedelta(seconds=1),
+    )
+    # The authority is valid at the first check.
+    service._validate_authority_time_window(authority, now=now)
+    # The same signed authority must fail if evaluation runs past expiry.
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_time_window(
+            authority, now=now + timedelta(seconds=2)
+        )
+    assert exc_info.value.status_code == 403
+    assert "expired" in exc_info.value.detail.lower()
+
+
+def test_authority_time_window_rejects_naive_timestamps():
+    now = datetime.now(timezone.utc)
+    authority = _authority_request_for_signature(
+        issued_at=now.replace(tzinfo=None),
+        expires_at=(now + timedelta(minutes=1)).replace(tzinfo=None),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        service._validate_authority_time_window(authority, now=now)
+    assert exc_info.value.status_code == 403
