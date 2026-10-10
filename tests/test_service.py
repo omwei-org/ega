@@ -934,11 +934,9 @@ def test_malformed_evidence_envelope_blocks():
 
 
 def test_context_age_valid_wallclock_changes():
-    """Context age is valid but wall-clock second changes during evaluation (v0.1.2.1 fix)."""
-    # This test verifies that the context epoch is used for epoch/version semantics
-    # while wall-clock freshness is checked separately
+    """A stable trusted context version passes both provider reads."""
     current_time = int(datetime.now(timezone.utc).timestamp())
-    # Context is fresh (within MAX_CONTEXT_AGE_SECONDS)
+    # The test-only provider stub returns the submitted version unchanged.
     request = EvaluateRequest(
         intent=RuntimeIntentRequest(
             principal="buyer-123",
@@ -958,12 +956,11 @@ def test_context_age_valid_wallclock_changes():
             source_decision="decision-001",
             status="VALID"
         ),
-        context_epoch=current_time  # Fresh context
+        context_epoch=current_time  # Matches the test provider stub
     )
 
     response = client.post("/v1/evaluate", json=request.model_dump())
-    # v0.1.2.1: should succeed because context epoch is used for epoch/version semantics
-    # Wall-clock freshness check passed (context is fresh)
+    # The provider returned the same trusted version on both reads.
     assert response.status_code == 200
     data = response.json()
     assert data["decision"] == "COMMIT"
