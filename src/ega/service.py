@@ -10,7 +10,7 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.5):
+Security features (v0.1.6):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Signed authorities require an expiry interval and matching service audience
 - Evaluation disabled by default when no trusted verification keys are configured
@@ -22,7 +22,7 @@ Security features (v0.1.5):
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.5 - ARCHITECTURAL):
+Security limitations (v0.1.6 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
 - Revocation and key rotation are not implemented
 - Public keys must be provisioned out-of-band; no authority issuance API
@@ -182,7 +182,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.5"
+    version="0.1.6"
 )
 
 
@@ -490,19 +490,8 @@ async def evaluate(request: EvaluateRequest):
         # Security check 2: validate intent-authority match
         _validate_intent_authority_match(intent, authority)
 
-        # Security check 3: context freshness (wall-clock check, separate from epoch semantics)
-        current_system_time = int(time.time())
-        context_age = current_system_time - request.context_epoch
-        if context_age > MAX_CONTEXT_AGE_SECONDS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Context epoch is stale (age: {context_age}s, max: {MAX_CONTEXT_AGE_SECONDS}s)"
-            )
-        if context_age < -MAX_CONTEXT_AGE_SECONDS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Context epoch is in the future (age: {context_age}s, max skew: {MAX_CONTEXT_AGE_SECONDS}s)"
-            )
+        # context_epoch is an opaque caller-observed version, not a timestamp.
+        # Its freshness is established only by comparing it with the trusted provider below.
 
         # Resolve the current context version from a trusted integration provider.
         # The provider is intentionally unconfigured by default: a wall-clock timestamp
@@ -523,7 +512,16 @@ async def evaluate(request: EvaluateRequest):
         if not isinstance(initial_context_version, int) or isinstance(initial_context_version, bool):
             raise HTTPException(status_code=503, detail="Trusted context version is invalid")
 
-        # Use the trusted version (not the client wall-clock epoch) for EGA boundary semantics.
+        # The caller's snapshot version must match the trusted current version.
+        # A timestamp/age check cannot establish semantic context freshness.
+        if request.context_epoch != initial_context_version:
+            return EvaluateResponse(
+                decision="BLOCK",
+                reason="STALE_CONTEXT",
+                applied=False,
+                effect="NOT_EXECUTED",
+            )
+
         prepared = prepare(authority, initial_context_version)
 
         # Evidence handling: convert Observer v1 envelopes to EvidenceItem
@@ -606,7 +604,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.5"}
+    return {"status": "healthy", "version": "0.1.6"}
 
 
 def run_server(host: str = None, port: int = None):
