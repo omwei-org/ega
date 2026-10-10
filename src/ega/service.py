@@ -324,6 +324,36 @@ def _validate_intent_authority_match(intent: RuntimeIntent, authority: Execution
         )
 
 
+def _validate_authority_time_window(
+    authority_request: ExecutionAuthorityRequest,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Validate signed-authority audience and validity at the point of checking."""
+    if not authority_request.nonce:
+        raise HTTPException(status_code=403, detail="Authority nonce is missing")
+    issued_at = authority_request.issued_at
+    expires_at = authority_request.expires_at
+    if issued_at is None or expires_at is None or not authority_request.audience:
+        raise HTTPException(status_code=403, detail="Authority validity fields are missing")
+    if (
+        issued_at.tzinfo is None or issued_at.utcoffset() is None
+        or expires_at.tzinfo is None or expires_at.utcoffset() is None
+    ):
+        raise HTTPException(status_code=403, detail="Authority timestamps must include a timezone")
+    current_time = now if now is not None else datetime.now(timezone.utc)
+    issued_utc = issued_at.astimezone(timezone.utc)
+    expires_utc = expires_at.astimezone(timezone.utc)
+    if authority_request.audience != SERVICE_AUDIENCE:
+        raise HTTPException(status_code=403, detail="Authority audience does not match this service")
+    if issued_utc.timestamp() > current_time.timestamp() + AUTHORITY_CLOCK_SKEW_SECONDS:
+        raise HTTPException(status_code=403, detail="Authority is not yet valid")
+    if expires_utc <= current_time or expires_utc <= issued_utc:
+        raise HTTPException(status_code=403, detail="Authority has expired or has an invalid validity interval")
+    if (expires_utc - issued_utc).total_seconds() > MAX_AUTHORITY_TTL_SECONDS:
+        raise HTTPException(status_code=403, detail="Authority validity interval exceeds configured maximum")
+
+
 def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> None:
     """
     Verify the Ed25519 signature over canonical authority fields.
@@ -349,26 +379,8 @@ def _validate_authority_trust(authority_request: ExecutionAuthorityRequest) -> N
         if not isinstance(encoded_key, str) or not authority_request.signature:
             raise HTTPException(status_code=403, detail="Authority signature is missing or untrusted")
 
-        # Signed authorities must be time-bounded, nonce-bearing, and intended for this service.
-        if not authority_request.nonce:
-            raise HTTPException(status_code=403, detail="Authority nonce is missing")
-        issued_at = authority_request.issued_at
-        expires_at = authority_request.expires_at
-        if issued_at is None or expires_at is None or not authority_request.audience:
-            raise HTTPException(status_code=403, detail="Authority validity fields are missing")
-        if issued_at.tzinfo is None or issued_at.utcoffset() is None or expires_at.tzinfo is None or expires_at.utcoffset() is None:
-            raise HTTPException(status_code=403, detail="Authority timestamps must include a timezone")
-        now = datetime.now(timezone.utc)
-        issued_utc = issued_at.astimezone(timezone.utc)
-        expires_utc = expires_at.astimezone(timezone.utc)
-        if authority_request.audience != SERVICE_AUDIENCE:
-            raise HTTPException(status_code=403, detail="Authority audience does not match this service")
-        if issued_utc.timestamp() > now.timestamp() + AUTHORITY_CLOCK_SKEW_SECONDS:
-            raise HTTPException(status_code=403, detail="Authority is not yet valid")
-        if expires_utc <= now or expires_utc <= issued_utc:
-            raise HTTPException(status_code=403, detail="Authority has expired or has an invalid validity interval")
-        if (expires_utc - issued_utc).total_seconds() > MAX_AUTHORITY_TTL_SECONDS:
-            raise HTTPException(status_code=403, detail="Authority validity interval exceeds configured maximum")
+        # Validate the signed authority's time window before verifying its signature.
+        _validate_authority_time_window(authority_request)
 
         try:
             from cryptography.exceptions import InvalidSignature
@@ -645,6 +657,11 @@ async def evaluate(request: EvaluateRequest):
                     applied=False,
                     effect="NOT_EXECUTED",
                 )
+
+        # Authority may expire while evidence/context checks are running. Revalidate
+        # immediately before consuming the nonce and returning the decision.
+        if signed_authority_mode:
+            _validate_authority_time_window(request.authority)
 
         # Claim nonce only after request, authority status, evidence, and the final
         # context re-read have passed. A blocked authority does not consume the nonce.
