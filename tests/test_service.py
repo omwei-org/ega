@@ -1476,6 +1476,7 @@ def test_authority_status_provider_receives_full_authority_object(monkeypatch):
     assert len(observed) == 2
     assert observed[0].authority_id == observed[1].authority_id
     assert observed[0].nonce == observed[1].nonce
+    assert observed[0].authority_digest == observed[1].authority_digest
 
 
 
