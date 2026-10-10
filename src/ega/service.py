@@ -10,19 +10,19 @@ Architecture:
 - Distinguishes authority issuance from evaluation
 - Rejects malformed/invalid authority
 
-Security features (v0.1.4):
+Security features (v0.1.5):
 - Ed25519 authority signatures verified against configured trusted public keys
 - Signed authorities require an expiry interval and matching service audience
 - Evaluation disabled by default when no trusted verification keys are configured
 - AEE conditions require Observer v1 evidence or block
 - Evidence converted using existing observer_v1_envelope_to_evidence()
 - AEE conditions evaluated against converted evidence
-- Independent context epoch from system time (staleness detection)
+- Trusted context version provider required; re-read before final authority check
 - Binds to 127.0.0.1 by default
 - Generic error messages (no internal details leaked)
 - HTTP authentication not implemented (requires network security layer)
 
-Security limitations (v0.1.4 - ARCHITECTURAL):
+Security limitations (v0.1.5 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
 - Revocation and key rotation are not implemented
 - Public keys must be provisioned out-of-band; no authority issuance API
@@ -37,7 +37,7 @@ Configuration:
 - EGA_MAX_AUTHORITY_TTL_SECONDS: Maximum signed authority lifetime (default: 300)
 - EGA_AUTHORITY_CLOCK_SKEW_SECONDS: Allowed future issue-time skew (default: 5)
 - EGA_SERVICE_AUDIENCE: Required authority audience (default: ega-service)
-- EGA_REPLAY_DB_PATH: SQLite replay ledger path (default: ./ega-replay.sqlite3)
+- EGA_REPLAY_DB_PATH: SQLite replay ledger path (default: ./ega-replay.sqlite3)\n- CONTEXT_VERSION_PROVIDER: deployment-installed trusted provider; unset by default, evaluation fails closed
 
 Usage:
   # Default: evaluation remains disabled until authority authenticity verification exists
@@ -49,7 +49,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 import uvicorn
@@ -81,6 +81,10 @@ MAX_AUTHORITY_TTL_SECONDS = int(os.getenv("EGA_MAX_AUTHORITY_TTL_SECONDS", "300"
 AUTHORITY_CLOCK_SKEW_SECONDS = int(os.getenv("EGA_AUTHORITY_CLOCK_SKEW_SECONDS", "5"))
 SERVICE_AUDIENCE = os.getenv("EGA_SERVICE_AUDIENCE", "ega-service")
 REPLAY_DB_PATH = os.getenv("EGA_REPLAY_DB_PATH", "./ega-replay.sqlite3")
+
+# Production integration must install a provider backed by trusted current state.
+# The provider must not derive its answer from fields in the incoming request.
+CONTEXT_VERSION_PROVIDER: Optional[Callable[["EvaluateRequest"], int]] = None
 
 
 # Pydantic models for request/response validation
@@ -178,7 +182,7 @@ class EvaluateResponse(BaseModel):
 app = FastAPI(
     title="EGA Service",
     description="HTTP API for EGA → ComOS integration",
-    version="0.1.4"
+    version="0.1.5"
 )
 
 
@@ -500,8 +504,27 @@ async def evaluate(request: EvaluateRequest):
                 detail=f"Context epoch is in the future (age: {context_age}s, max skew: {MAX_CONTEXT_AGE_SECONDS}s)"
             )
 
-        # Use existing EGA boundary functions
-        prepared = prepare(authority, request.context_epoch)
+        # Resolve the current context version from a trusted integration provider.
+        # The provider is intentionally unconfigured by default: a wall-clock timestamp
+        # supplied by the caller is not proof of current ComOS state.
+        provider = CONTEXT_VERSION_PROVIDER
+        if provider is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Trusted context version provider is not configured",
+            )
+        try:
+            initial_context_version = provider(request)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Trusted context version is unavailable",
+            ) from exc
+        if not isinstance(initial_context_version, int) or isinstance(initial_context_version, bool):
+            raise HTTPException(status_code=503, detail="Trusted context version is invalid")
+
+        # Use the trusted version (not the client wall-clock epoch) for EGA boundary semantics.
+        prepared = prepare(authority, initial_context_version)
 
         # Evidence handling: convert Observer v1 envelopes to EvidenceItem
         current_evidence = None
@@ -519,7 +542,28 @@ async def evaluate(request: EvaluateRequest):
             # No AEE conditions but evidence provided - convert but don't use
             current_evidence = None
 
-        # Claim nonce only after request, authority, context, and evidence validation.
+        # Re-read trusted context immediately before final authority validation.
+        # A provider failure or version change blocks; it must never fall back to the client epoch.
+        try:
+            current_context_version = provider(request)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Trusted context version is unavailable",
+            ) from exc
+        if not isinstance(current_context_version, int) or isinstance(current_context_version, bool):
+            raise HTTPException(status_code=503, detail="Trusted context version is invalid")
+
+        if current_context_version != prepared.context_epoch:
+            return EvaluateResponse(
+                decision="BLOCK",
+                reason="STALE_CONTEXT",
+                applied=False,
+                effect="NOT_EXECUTED",
+            )
+
+        # Claim nonce only after request, authority, evidence, and the final context
+        # re-read have passed. A stale-context block does not consume the authority.
         if request.authority.expires_at is not None and request.authority.nonce is not None:
             _claim_authority_nonce(
                 request.authority.authority_id,
@@ -527,19 +571,16 @@ async def evaluate(request: EvaluateRequest):
                 request.authority.expires_at,
             )
 
-        # Final authority check: use prepared.context_epoch for epoch/version semantics
-        # The wall-clock freshness check was done separately above
         reason = final_authority_check(
             prepared,
-            prepared.context_epoch,  # Use prepared epoch for epoch/version semantics
-            current_authority=None,  # Not checking for authority changes in v0.1.2
+            current_context_version,
+            current_authority=None,
             current_evidence=current_evidence
         )
 
-        # Commit decision: use prepared.context_epoch for epoch/version semantics
         result = commit(
             prepared,
-            prepared.context_epoch,  # Use prepared epoch for epoch/version semantics
+            current_context_version,
             current_evidence=current_evidence
         )
 
@@ -565,7 +606,7 @@ async def evaluate(request: EvaluateRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy", "version": "0.1.4"}
+    return {"status": "healthy", "version": "0.1.5"}
 
 
 def run_server(host: str = None, port: int = None):
