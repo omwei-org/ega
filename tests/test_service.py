@@ -6,6 +6,7 @@ Tests service behavior, error handling, and intent-authority validation.
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import json
 import uuid
@@ -1262,6 +1263,26 @@ def test_authority_nonce_cannot_be_reused(tmp_path, monkeypatch):
     with pytest.raises(HTTPException) as exc_info:
         service._claim_authority_nonce("auth-001", "nonce-0123456789abcdef", expires)
     assert exc_info.value.status_code == 409
+
+
+def test_concurrent_replay_claim_has_exactly_one_winner(tmp_path, monkeypatch):
+    """SQLite's single-host ledger atomically accepts a nonce at most once."""
+    monkeypatch.setattr(service, "REPLAY_DB_PATH", str(tmp_path / "replay.sqlite3"))
+    expires = datetime.now(timezone.utc) + timedelta(minutes=2)
+    nonce = "nonce-concurrent-claim-0123456789"
+
+    def claim():
+        try:
+            service._claim_authority_nonce("auth-concurrent", nonce, expires)
+            return "claimed"
+        except HTTPException as exc:
+            return exc.status_code
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        outcomes = list(pool.map(lambda _: claim(), range(16)))
+
+    assert outcomes.count("claimed") == 1
+    assert outcomes.count(409) == 15
 
 
 def test_replay_ledger_allows_distinct_nonces(tmp_path, monkeypatch):
