@@ -105,7 +105,7 @@ def test_health_check():
     """Health check endpoint works."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "version": "0.1.7"}
+    assert response.json() == {"status": "healthy", "version": "0.1.8"}
 
 
 def test_evaluate_valid_authority():
@@ -1455,3 +1455,24 @@ def test_authority_revoked_between_initial_and_final_check_blocks(monkeypatch):
     assert response.json()["decision"] == "BLOCK"
     assert response.json()["reason"] == "AUTHORITY_REVOKED"
     assert response.json()["effect"] == "NOT_EXECUTED"
+
+
+
+def test_authority_status_provider_receives_full_authority_object(monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    _install_signed_authority_key(monkeypatch, private_key)
+    observed = []
+    def active_authority(authority):
+        observed.append(authority)
+        return (
+            authority.authority_id == "auth-001"
+            and authority.nonce == "nonce-0123456789abcdef"
+            and authority.source_decision == "decision-001"
+        )
+    monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", active_authority)
+    response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
+    assert response.status_code == 200
+    assert response.json()["decision"] == "COMMIT"
+    assert len(observed) == 2
+    assert observed[0].authority_id == observed[1].authority_id
+    assert observed[0].nonce == observed[1].nonce
