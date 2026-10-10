@@ -24,7 +24,7 @@ Security features (v0.1.8):
 
 Security limitations (v0.1.8 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
-- Revocation and key rotation are not implemented
+- Revocation provider interface exists but no production registry is bundled; key rotation is not implemented
 - Public keys must be provisioned out-of-band; no authority issuance API
 
 Configuration:
