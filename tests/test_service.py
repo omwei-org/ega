@@ -26,6 +26,7 @@ from ega.interop import (
 # Set environment variables for testing BEFORE importing the app
 os.environ["EGA_FAIL_CLOSED"] = "false"
 os.environ["EGA_TRUSTED_AUTHORITY_IDS"] = ""
+os.environ["EGA_API_BEARER_TOKEN"] = "test-api-token"
 
 from fastapi import HTTPException
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -42,7 +43,7 @@ service.CONTEXT_VERSION_PROVIDER = lambda request: request.context_epoch  # test
 service.AUTHORITY_STATUS_PROVIDER = lambda authority_id: True  # test-only active-authority stub
 
 # Test client
-client = TestClient(app)
+client = TestClient(app, headers={"Authorization": "Bearer test-api-token"})
 
 @pytest.fixture(autouse=True)
 def isolate_authority_replay_ledger(tmp_path, monkeypatch):
@@ -106,6 +107,48 @@ def _make_fresh_observer_envelope(value: int) -> dict:
     digest = sha256(_canonicalize_nextone_v1(covered)).hexdigest()
     envelope["integrity"]["digest"] = f"sha256:{digest}"
     return envelope
+
+
+def _minimal_evaluate_payload_for_auth_test():
+    """Valid request shape; authentication should reject before authority evaluation."""
+    return {
+        "authority": {
+            "authority_id": "auth-001",
+            "principal": "buyer-123",
+            "action": "retail_sale",
+            "target": "tenant-456",
+            "parameters": {"items": [{"product_id": "sku-001", "quantity": 1}]},
+            "environment": "production",
+            "source_decision": "decision-001",
+            "status": "VALID",
+            "aee_conditions": None,
+        },
+        "intent": {
+            "principal": "buyer-123",
+            "action": "retail_sale",
+            "target": "tenant-456",
+            "parameters": {"items": [{"product_id": "sku-001", "quantity": 1}]},
+            "environment": "production",
+            "decision_ref": "decision-001",
+        },
+        "context_epoch": 0,
+    }
+
+
+def test_evaluate_endpoint_rejects_missing_bearer_token():
+    unauthenticated_client = TestClient(app)
+    response = unauthenticated_client.post(
+        "/v1/evaluate", json=_minimal_evaluate_payload_for_auth_test()
+    )
+    assert response.status_code == 401
+
+
+def test_evaluate_endpoint_rejects_invalid_bearer_token():
+    invalid_client = TestClient(app, headers={"Authorization": "Bearer wrong-token"})
+    response = invalid_client.post(
+        "/v1/evaluate", json=_minimal_evaluate_payload_for_auth_test()
+    )
+    assert response.status_code == 401
 
 
 def test_health_check():
