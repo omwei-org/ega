@@ -515,8 +515,18 @@ def _convert_evidence_envelopes(
     return evidence_dict
 
 
+def _authenticate_caller(authorization_header: str | None) -> None:
+    """Require a configured bearer token; no token configuration fails closed."""
+    expected_token = os.getenv("EGA_API_BEARER_TOKEN", "")
+    if not expected_token:
+        raise HTTPException(status_code=503, detail="Caller authentication is not configured; evaluation is disabled")
+    scheme, separator, supplied_token = (authorization_header or "").partition(" ")
+    if not separator or scheme.lower() != "bearer" or not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(status_code=401, detail="Caller authentication failed")
+
+
 @app.post("/v1/evaluate", response_model=EvaluateResponse)
-async def evaluate(request: EvaluateRequest):
+async def evaluate(request: EvaluateRequest, http_request: Request):
     """
     Evaluate a RuntimeIntent against an ExecutionAuthority.
 
