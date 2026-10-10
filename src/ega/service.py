@@ -658,11 +658,6 @@ async def evaluate(request: EvaluateRequest):
                     effect="NOT_EXECUTED",
                 )
 
-        # Authority may expire while evidence/context checks are running. Revalidate
-        # immediately before consuming the nonce and returning the decision.
-        if signed_authority_mode:
-            _validate_authority_time_window(request.authority)
-
         # Claim nonce only after request, authority status, evidence, and the final
         # context re-read have passed. A blocked authority does not consume the nonce.
         if request.authority.expires_at is not None and request.authority.nonce is not None:
@@ -672,12 +667,10 @@ async def evaluate(request: EvaluateRequest):
                 request.authority.expires_at,
             )
 
-        reason = final_authority_check(
-            prepared,
-            current_context_version,
-            current_authority=None,
-            current_evidence=current_evidence
-        )
+        # Authority may expire during the registry/ledger operations above. Recheck
+        # immediately before returning a decision; ComOS must still enforce at effect.
+        if signed_authority_mode:
+            _validate_authority_time_window(request.authority)
 
         result = commit(
             prepared,
