@@ -158,3 +158,10 @@ The example is an integration contract, not a bundled ComOS adapter. No live Com
 When `EGA_AUTHORITY_PUBLIC_KEYS_JSON` enables signed-authority mode, the service also requires `ega.service.AUTHORITY_STATUS_PROVIDER`. The provider must query a trusted authority registry and return a boolean indicating whether the specified authority ID is currently active and not revoked. EGA checks status before context evaluation and again immediately before returning its decision. Missing or unavailable status fails closed; a revoked authority returns `BLOCK / AUTHORITY_REVOKED`.
 
 This is an integration interface, not a bundled revocation service. Deployments must implement it against an authoritative registry. The second read narrows the revocation window but does not make the decision atomic with a later external effect. The execution boundary must still verify current authority at the point of effect.
+
+
+### Authority status provider input (v0.1.8)
+
+The authority status provider now receives the parsed `ExecutionAuthorityRequest`, not just an `authority_id`. This lets the deployment registry check status against the exact authority instance and its relevant identity fields (for example, authority ID, source decision, nonce, AO/AEE/ECT references, validity interval, and decision-record digest), rather than accidentally treating a reused ID as the same grant.
+
+The provider implementation remains deployment-owned. It must bind its status result to the exact fields it verifies and return `True` only for that active authority instance. The service's two checks do not eliminate a race with a later external effect.
