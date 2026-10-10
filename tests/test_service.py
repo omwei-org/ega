@@ -1540,3 +1540,27 @@ def test_authority_time_window_rejects_naive_timestamps():
     with pytest.raises(HTTPException) as exc_info:
         service._validate_authority_time_window(authority, now=now)
     assert exc_info.value.status_code == 403
+
+
+def test_evaluate_blocks_if_signed_authority_expires_before_decision(tmp_path, monkeypatch):
+    private_key = Ed25519PrivateKey.generate()
+    _install_signed_authority_key(monkeypatch, private_key)
+    monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", lambda _query: True)
+    monkeypatch.setattr(service, "CONTEXT_VERSION_PROVIDER", lambda request: request.context_epoch)
+    monkeypatch.setattr(service, "REPLAY_DB_PATH", str(tmp_path / "replay.sqlite3"))
+
+    real_datetime = datetime
+    start = real_datetime.now(timezone.utc)
+    future_times = iter([start, start + timedelta(minutes=3)])
+
+    class ControlledDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = next(future_times)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr(service, "datetime", ControlledDateTime)
+    response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
+
+    assert response.status_code == 403
+    assert "expired" in response.json()["detail"].lower()
