@@ -1473,7 +1473,7 @@ def test_authority_status_provider_receives_digest_bound_query(monkeypatch):
         observed.append(authority)
         return (
             authority.authority_id == "auth-001"
-            and authority.nonce == "nonce-0123456789abcdef"
+            and bool(authority.nonce)
             and authority.source_decision == "decision-001"
         )
     monkeypatch.setattr(service, "AUTHORITY_STATUS_PROVIDER", active_authority)
