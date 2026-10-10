@@ -40,7 +40,7 @@ Configuration:
 - EGA_REPLAY_DB_PATH: SQLite replay ledger path (default: ./ega-replay.sqlite3)\n- CONTEXT_VERSION_PROVIDER: deployment-installed trusted provider; unset by default, evaluation fails closed
 
 Usage:
-  # Default: evaluation remains disabled until authority authenticity verification exists
+  # Default: evaluation fails closed until trusted authority keys and a context provider are configured
   python3 -m ega.service
 
   # UNSAFE model/demo mode only; never use with real ComOS or production traffic
