@@ -4,6 +4,8 @@
 **Purpose**: Analyze current authority model and design security hardening
 **Status**: PRE-IMPLEMENTATION ANALYSIS
 
+> **Historical snapshot — not current implementation documentation.** This document records the pre-implementation state observed during the 2026-10-10 analysis. The target branch now contains authority-signature verification, authority time-window and audience checks, fail-closed configuration, a trusted context-version provider, authority-status rechecks, and a SQLite nonce replay ledger in `src/ega/service.py`. For the current contract and configuration, the service source and its tests are authoritative. The proposed standalone `crypto.py` and in-memory `nonce_tracker.py` helpers were intentionally excluded from this PR because they duplicated or diverged from the existing service implementation.
+
 ---
 
 ## 1. HTTP Test Boundary Verification
