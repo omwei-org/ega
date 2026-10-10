@@ -105,7 +105,7 @@ def test_health_check():
     """Health check endpoint works."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy", "version": "0.1.8"}
+    assert response.json() == {"status": "healthy", "version": "0.1.9"}
 
 
 def test_evaluate_valid_authority():
@@ -1486,3 +1486,16 @@ def test_authority_status_provider_non_boolean_fails_closed(monkeypatch):
     response = client.post("/v1/evaluate", json=_signed_evaluate_payload(private_key))
     assert response.status_code == 503
     assert response.json()["detail"] == "Trusted authority status is invalid"
+
+
+
+def test_authority_status_query_digest_binds_exact_signed_payload():
+    private_key = Ed25519PrivateKey.generate()
+    authority = ExecutionAuthorityRequest.model_validate(_signed_authority_request(private_key))
+    original = service._authority_status_query(authority)
+    changed = service._authority_status_query(
+        authority.model_copy(update={"source_decision": "decision-different"})
+    )
+    assert len(original.authority_digest) == 64
+    assert original.authority_digest != changed.authority_digest
+    assert original.authority_id == changed.authority_id
