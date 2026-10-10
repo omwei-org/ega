@@ -20,7 +20,7 @@ Security features (v0.1.9):
 - Trusted context version provider required; re-read before final authority check
 - Binds to 127.0.0.1 by default
 - Generic error messages (no internal details leaked)
-- HTTP authentication not implemented (requires network security layer)
+- /v1/evaluate requires a configured EGA_API_BEARER_TOKEN; use TLS outside loopback
 
 Security limitations (v0.1.9 - ARCHITECTURAL):
 - SQLite replay ledger is local to one shared database file; distributed deployments need a shared strongly consistent store
@@ -51,6 +51,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional, Set
 import hashlib
+import hmac
 import json
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -514,8 +515,18 @@ def _convert_evidence_envelopes(
     return evidence_dict
 
 
+def _authenticate_caller(authorization_header: str | None) -> None:
+    """Require a configured bearer token; no token configuration fails closed."""
+    expected_token = os.getenv("EGA_API_BEARER_TOKEN", "")
+    if not expected_token:
+        raise HTTPException(status_code=503, detail="Caller authentication is not configured; evaluation is disabled")
+    scheme, separator, supplied_token = (authorization_header or "").partition(" ")
+    if not separator or scheme.lower() != "bearer" or not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(status_code=401, detail="Caller authentication failed")
+
+
 @app.post("/v1/evaluate", response_model=EvaluateResponse)
-async def evaluate(request: EvaluateRequest):
+async def evaluate(request: EvaluateRequest, http_request: Request):
     """
     Evaluate a RuntimeIntent against an ExecutionAuthority.
 
@@ -530,6 +541,9 @@ async def evaluate(request: EvaluateRequest):
     against a specific runtime intent.
     """
     try:
+        # Authenticate the caller before processing the authority or intent.
+        _authenticate_caller(http_request.headers.get("authorization"))
+
         # Convert Pydantic models to EGA models
         intent = _convert_intent(request.intent)
         authority = _convert_authority(request.authority)
