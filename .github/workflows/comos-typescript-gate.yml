@@ -1,0 +1,21 @@
+name: ComOS TypeScript gate tests
+
+on:
+  push:
+    branches:
+      - "integration/comos-typescript-gate-v01"
+  pull_request:
+    branches:
+      - main
+      - "integration/comos-http-gate-v01"
+
+jobs:
+  test-typescript-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run TypeScript gate tests
+        run: node --experimental-strip-types --test integrations/comos/ega-http-gate.test.ts
