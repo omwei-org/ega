@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalActionDigest, EgaAuthorizationDenied, EgaHttpGate, type JsonValue } from "./ega-http-gate.ts";
+import { buildComosNodeIntent, canonicalActionDigest, EgaAuthorizationDenied, EgaHttpGate, type JsonValue } from "./ega-http-gate.ts";
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -180,4 +180,33 @@ test("canonical action digest matches the cross-language vector and binds ACT pl
     items: [{ product_id: "p-1", unit_price_coms: 1.5 }],
     total_coms: 3,
   }), TypeError);
+});
+
+test("node intent binds command ID, canonical digest, item quantities, and node total", () => {
+  const act = {
+    kind: "retail_sale",
+    command_id: "cmd-0001",
+    tenant_id: "tenant-vendor-1",
+    items: [{ product_id: "p-1", quantity: 2 }],
+    buyer_root: "buyer-7",
+    payer_tenant_id: "tenant-buyer-7",
+    brokered_sale_id: "sale-0001",
+  };
+  const pricing = {
+    items: [{ product_id: "p-1", unit_price_coms: 125 }],
+    total_coms: 250,
+  };
+  const intent = buildComosNodeIntent(act, pricing, {
+    principal: "buyer-7",
+    environment: "test",
+  }) as Record<string, JsonValue>;
+  assert.equal(intent.action, "retail_sale");
+  assert.equal(intent.target, "tenant-vendor-1");
+  assert.equal(intent.decision_ref, "cmd-0001");
+  assert.deepEqual(intent.parameters, {
+    items: [{ product_id: "p-1", quantity: 2 }],
+    expected_total_coms: 250,
+    command_id: "cmd-0001",
+    action_digest: "0341012ba38a25a2be30c22ba24cdf2151d35fcda389c729bc6d1c0c00e5dcff",
+  });
 });
