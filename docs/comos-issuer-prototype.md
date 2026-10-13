@@ -14,6 +14,7 @@ Status: prototype only. This issuer is not yet wired into the ComOS hub or node 
   "allowed_tenants": ["tenant-vendor-1"],
   "allowed_products": ["p-1"],
   "allowed_principals": ["buyer-7"],
+  "allowed_environments": ["test"],
   "max_quantity_per_item": 5,
   "max_total_coms": 1000
 }
