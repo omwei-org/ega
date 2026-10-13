@@ -1,4 +1,6 @@
 import base64
+import os
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from datetime import datetime, timezone
 
 import pytest
@@ -10,6 +12,7 @@ from issuer import IssueRequest, NodePricing, action_digest, canonical_json, iss
 def fixture_data():
     hub_key = Ed25519PrivateKey.generate()
     issuer_key = Ed25519PrivateKey.generate()
+    os.environ["COMOS_HUB_ACT_PUBLIC_KEY_B64"] = base64.b64encode(hub_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode()
     act = {
         "kind": "retail_sale",
         "command_id": "cmd-0001",
