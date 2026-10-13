@@ -222,3 +222,72 @@ export function canonicalActionDigest(act: JsonValue, nodePricing: ComosNodePric
   assertIntegerOnlyJson(projection);
   return fingerprint(projection);
 }
+
+export interface ComosNodeIdentity {
+  principal: string;
+  environment: string;
+}
+
+/**
+ * Build the EGA intent for a node-side retail_sale from the ACT actually
+ * received and the prices actually computed by this node. This is a mapping
+ * helper only: the signed issuer authority and the node's effect guard remain
+ * separate requirements.
+ */
+export function buildComosNodeIntent(
+  act: JsonValue,
+  nodePricing: ComosNodePricing,
+  identity: ComosNodeIdentity,
+): JsonValue {
+  if (act === null || Array.isArray(act) || typeof act !== "object") {
+    throw new TypeError("ACT must be a JSON object");
+  }
+  const value = act as Record<string, JsonValue>;
+  const requiredString = (field: string): string => {
+    const candidate = value[field];
+    if (typeof candidate !== "string" || !candidate.trim()) {
+      throw new TypeError(`ACT ${field} is required`);
+    }
+    return candidate;
+  };
+  const commandId = requiredString("command_id");
+  const target = requiredString("tenant_id");
+  requiredString("kind");
+  if (value.kind !== "retail_sale") {
+    throw new TypeError("Only retail_sale ACTs are supported by this profile");
+  }
+  const items = value.items;
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new TypeError("ACT items must be a non-empty array");
+  }
+  const normalizedItems: Array<{ product_id: string; quantity: number }> = [];
+  for (const [index, item] of items.entries()) {
+    if (item === null || Array.isArray(item) || typeof item !== "object") {
+      throw new TypeError(`Invalid ACT item at index ${index}`);
+    }
+    const productId = item.product_id;
+    const quantity = item.quantity;
+    if (typeof productId !== "string" || !productId.trim() ||
+        typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity <= 0) {
+      throw new TypeError(`Invalid ACT item at index ${index}`);
+    }
+    normalizedItems.push({ product_id: productId, quantity });
+  }
+  if (!identity.principal.trim() || !identity.environment.trim()) {
+    throw new TypeError("Trusted principal and environment are required");
+  }
+  const actionDigest = canonicalActionDigest(act, nodePricing);
+  return {
+    principal: identity.principal,
+    action: "retail_sale",
+    target,
+    parameters: {
+      items: normalizedItems,
+      expected_total_coms: nodePricing.total_coms,
+      command_id: commandId,
+      action_digest: actionDigest,
+    },
+    environment: identity.environment,
+    decision_ref: commandId,
+  };
+}
