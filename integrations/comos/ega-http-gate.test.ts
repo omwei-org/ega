@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EgaAuthorizationDenied, EgaHttpGate, type JsonValue } from "./ega-http-gate.ts";
+import { canonicalActionDigest, EgaAuthorizationDenied, EgaHttpGate, type JsonValue } from "./ega-http-gate.ts";
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -134,4 +134,34 @@ test("live EGA service accepts a valid request and blocks stale context", {
     () => gate.authorize({ authority, intent, context_epoch: 999 }),
     EgaAuthorizationDenied,
   );
+});
+
+test("canonical action digest matches the cross-language vector and binds ACT plus node pricing", () => {
+  const act = {
+    kind: "retail_sale",
+    command_id: "cmd-0001",
+    tenant_id: "tenant-vendor-1",
+    items: [{ product_id: "p-1", quantity: 2 }],
+    buyer_root: "buyer-7",
+    payer_tenant_id: "tenant-buyer-7",
+    brokered_sale_id: "sale-0001",
+  };
+  const pricing = {
+    items: [{ product_id: "p-1", unit_price_coms: 125 }],
+    total_coms: 250,
+  };
+  const digest = canonicalActionDigest(act, pricing);
+  assert.equal(digest, "0341012ba38a25a2be30c22ba24cdf2151d35fcda389c729bc6d1c0c00e5dcff");
+  assert.notEqual(
+    canonicalActionDigest({ ...act, items: [{ product_id: "p-1", quantity: 3 }] }, pricing),
+    digest,
+  );
+  assert.notEqual(
+    canonicalActionDigest(act, { ...pricing, total_coms: 251 }),
+    digest,
+  );
+  assert.throws(() => canonicalActionDigest(act, {
+    items: [{ product_id: "p-1", unit_price_coms: 1.5 }],
+    total_coms: 3,
+  }), TypeError);
 });
