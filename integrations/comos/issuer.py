@@ -196,8 +196,9 @@ def issue_authority(request: IssueRequest, *, scope: dict[str, Any],
         "decision_record_digest": None,
         "aee_conditions": None,
     }
+    signed_payload = {key: value for key, value in authority.items() if key != "signature"}
     authority["signature"] = base64.b64encode(
-        private_key.sign(canonical_json(authority))
+        private_key.sign(canonical_json(signed_payload))
     ).decode("ascii")
     return authority
 
