@@ -6,6 +6,8 @@ must never be copied into a real ComOS deployment.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 import socket
 import subprocess
 import sys
@@ -13,6 +15,28 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+
+
+# Shared canonical-action digest vector: keep aligned with the TypeScript test.
+_digest_vector = {
+    "schema": "comos-action-digest-v1",
+    "act": {
+        "kind": "retail_sale",
+        "command_id": "cmd-0001",
+        "tenant_id": "tenant-vendor-1",
+        "items": [{"product_id": "p-1", "quantity": 2}],
+        "buyer_root": "buyer-7",
+        "payer_tenant_id": "tenant-buyer-7",
+        "brokered_sale_id": "sale-0001",
+    },
+    "node_pricing": {
+        "items": [{"product_id": "p-1", "unit_price_coms": 125}],
+        "total_coms": 250,
+    },
+}
+_digest_bytes = json.dumps(_digest_vector, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+assert hashlib.sha256(_digest_bytes).hexdigest() == "0341012ba38a25a2be30c22ba24cdf2151d35fcda389c729bc6d1c0c00e5dcff"
+
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
