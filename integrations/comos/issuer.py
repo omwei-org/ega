@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 AUDIENCE = os.getenv("EGA_SERVICE_AUDIENCE", "ega-service")
 AUTHORITY_ID = os.getenv("COMOS_ISSUER_AUTHORITY_ID", "comos-operator-issuer")
@@ -35,6 +35,9 @@ class NodePricing(BaseModel):
 
 class IssueRequest(BaseModel):
     act: dict[str, Any]
+    # Signature made by the hub over canonical_json(act). Issuer fails closed
+    # unless the ACT provenance can be verified with a separately provisioned key.
+    act_signature: str = Field(min_length=1)
     node_pricing: NodePricing
     principal: str = Field(min_length=1)
     environment: str = Field(min_length=1)
@@ -78,6 +81,21 @@ def action_digest(act: dict[str, Any], pricing: NodePricing) -> str:
     return hashlib.sha256(canonical_json(projection)).hexdigest()
 
 
+def verify_hub_act_signature(act: dict[str, Any], signature: str) -> None:
+    """Verify hub provenance; the issuer never treats node-supplied ACT as trusted."""
+    raw_key = os.getenv("COMOS_HUB_ACT_PUBLIC_KEY_B64", "")
+    if not raw_key:
+        raise RuntimeError("COMOS_HUB_ACT_PUBLIC_KEY_B64 is required; issuer fails closed")
+    try:
+        key_bytes = base64.b64decode(raw_key, validate=True)
+        sig_bytes = base64.b64decode(signature, validate=True)
+        if len(key_bytes) != 32:
+            raise ValueError("hub Ed25519 public key must be 32 bytes")
+        Ed25519PublicKey.from_public_bytes(key_bytes).verify(sig_bytes, canonical_json(act))
+    except Exception as exc:
+        raise ValueError("ACT hub signature verification failed") from exc
+
+
 def load_scope() -> dict[str, Any]:
     raw = os.getenv("COMOS_ISSUER_SCOPE_JSON", "")
     if not raw:
@@ -115,6 +133,7 @@ def issue_authority(request: IssueRequest, *, scope: dict[str, Any],
                     private_key: Ed25519PrivateKey,
                     now: datetime | None = None) -> dict[str, Any]:
     act = request.act
+    verify_hub_act_signature(act, request.act_signature)
     if act.get("kind") != "retail_sale":
         raise ValueError("unsupported ACT kind")
     command_id, tenant_id = act.get("command_id"), act.get("tenant_id")
@@ -190,6 +209,8 @@ app = FastAPI(title="ComOS Operator Authority Issuer", version="0.1.0")
 def health() -> dict[str, str]:
     load_scope()
     load_private_key()
+    if not os.getenv("COMOS_HUB_ACT_PUBLIC_KEY_B64"):
+        raise RuntimeError("COMOS_HUB_ACT_PUBLIC_KEY_B64 is required")
     return {"status": "ok"}
 
 
