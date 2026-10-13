@@ -4,6 +4,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from datetime import datetime, timezone
 
 import pytest
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from issuer import IssueRequest, NodePricing, action_digest, canonical_json, issue_authority
@@ -46,6 +47,9 @@ def test_issuer_signs_authority_bound_to_digest():
     authority = issue_authority(request, scope=scope, private_key=key, now=now)
     assert authority["parameters"]["action_digest"] == action_digest(request.act, request.node_pricing)
     assert authority["parameters"]["command_id"] == "cmd-0001"
+    signed = dict(authority)
+    signature = base64.b64decode(signed.pop("signature"))
+    key.public_key().verify(signature, canonical_json(signed))
 
 
 @pytest.mark.parametrize("change", [
