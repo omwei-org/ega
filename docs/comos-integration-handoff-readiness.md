@@ -6,7 +6,7 @@ Status: EGA HTTP gate exists; complete order-effect binding is not yet implement
 
 The current EGA service accepts POST /v1/evaluate with { intent, authority, context_epoch }. Its response is { decision, reason, applied, effect }. The adapter accepts only COMMIT, applied=true, a non-empty reason, and effect NONE or NOT_EXECUTED. Other responses and transport errors fail closed.
 
-The EGA service currently models intent parameters as items[{product_id, quantity}] plus optional expected_total_coms. Its conversion function reconstructs parameters from only those fields. The authority comparison then compares this reduced parameter object with authority parameters.
+The EGA service models intent parameters as items[{product_id, quantity}], optional expected_total_coms, and optional command_id/action_digest. Its conversion function reconstructs these declared fields, and the authority comparison requires the resulting parameter object to match the authority parameters exactly. command_id/action_digest are optional for backward compatibility; the ComOS node-effect profile must supply both. The digest is only an identifier: the trusted issuer must validate the scope before signing authority.
 
 ## Public ComOS order_create schema
 
@@ -31,6 +31,18 @@ Therefore, the existing EGA intent schema cannot directly represent the full pub
 
 This is a checklist. It does not claim all fields are forwarded to the node today.
 
+## Canonical node action digest (v1)
+
+The TypeScript integration now exports canonicalActionDigest(act, nodePricing). The canonical projection is:
+
+- schema: "comos-action-digest-v1"
+- act: the exact ACT object received by the node
+- node_pricing: the node-computed per-product unit prices and total_coms
+
+Canonical bytes are UTF-8 JSON with lexicographically sorted object keys, compact separators, preserved array order, and safe integer numbers only. SHA-256 is computed over those bytes. A shared TypeScript/Python test vector is pinned in the integration tests.
+
+The digest is not a signature, a permit, or evidence that the issuer approved the action. The issuer must independently validate tenant, action, product IDs, quantities, and total against operator-configured scope, recompute the digest, and sign a short-lived authority containing command_id and action_digest. The node gate must derive the same values from the ACT and node pricing at execution time. Do not place the issuer private key in the node runtime.
+
 ## Required flow
 
 1. Authenticate and derive trusted identity.
@@ -48,6 +60,9 @@ This is a checklist. It does not claim all fields are forwarded to the node toda
 - Mutation after authorization: reject or reauthorize.
 - Field coverage: changing each effect-relevant field causes a mismatch unless expressly permitted.
 - Queue-to-node integrity: altered ACT payload cannot be accepted as the authorized operation.
+- Node action digest: the same canonical projection produces the same digest in Python and TypeScript; changing ACT or node prices changes it.
+- Issuer scope denial: unknown tenant/product, quantity cap, or total cap violation results in no authority.
+- Authority binding: changing command_id or action_digest between issuer and gate blocks.
 - Authority/context invalidity, expiry, revocation, replay or staleness: fail closed.
 - Existing billing, balance and settlement checks remain active.
 
