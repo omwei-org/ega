@@ -14,27 +14,22 @@ If using a TypeScript runner instead, run the test file with that runner's Node 
 
 ## Required insertion point
 
-In ComOS, invoke `executeAuthorizedPayload` only after the hub has built the trusted `order_create` payload (including hub-derived price/vendor data) and before enqueueing the ACT or creating any pending order/protected effect. Do not build an unrelated intent from caller-supplied fields.
+For the node-side retail-sale profile, the gate belongs in the node handler immediately before `reserveInventory`, after the node has parsed the exact ACT and computed the prices that will be used for the sale. The hub remains the requester and continues to perform its own payer, price-reconciliation, and settlement checks.
 
-Example integration shape:
+The module exports:
+- `canonicalActionDigest(act, nodePricing)`: SHA-256 over the exact ACT plus node-computed item unit prices and total.
+- `buildComosNodeIntent(act, nodePricing, identity)`: maps the ACT and node pricing into the current EGA schema, binding `command_id`, `action_digest`, `expected_total_coms`, items, target tenant, principal, action, and environment.
+- `executeAuthorizedPayload(...)`: freezes an execution payload snapshot, authorizes the derived intent, and passes that same snapshot to the callback only after COMMIT.
 
-```ts
-const outcome = await egaGate.executeAuthorizedPayload({
-  payload: brokerPayload,
-  authority: resolvedExecutionAuthority,
-  context_epoch: trustedContextEpoch,
-  buildIntent: (payload) => ({
-    principal: trustedPrincipal,
-    action: "order_create",
-    target: resolvedVendorTarget,
-    parameters: { items: payload.items },
-    environment: trustedEnvironment,
-  }),
-  execute: (authorizedPayload) => brokerActToNode(authorizedPayload),
-});
-```
+Expected node-side sequence:
+1. Parse the received ACT and calculate node pricing from trusted node catalog state.
+2. Compute the canonical digest over the ACT and those exact prices.
+3. Ask a separate operator-controlled issuer for a short-lived, single-use signed authority. The issuer must independently recompute the digest and enforce tenant, product, quantity, and total limits. The issuer private key must not be present in the node runtime.
+4. Build the EGA intent with `buildComosNodeIntent`, using the same ACT and pricing, and obtain the trusted context epoch for the product/catalog version.
+5. Call EGA and permit no inventory reservation on BLOCK, transport failure, malformed response, digest mismatch, expiry, or stale context.
+6. At the protected effect, atomically consume the one-time permit (or use an equivalent transactional guard) with the reservation. Define crash/recovery behavior so a consumed permit cannot be replayed after a crash.
 
-The field names above illustrate the mapping; adapt them to the actual EGA request schema and ComOS types. The `buildIntent` function must cover every field that can change the protected effect. Do not use caller-supplied values for trusted principal, authority, or context epoch.
+The TypeScript gate and mapping helper are integration primitives, not a complete issuer, replay-safe effect guard, or ComOS patch. The internal ComOS handler is not included in this repository, so this PR does not claim that the live ComOS path calls the gate yet.
 
 ## Fail-closed behavior and limit
 
@@ -43,7 +38,9 @@ Only a successful HTTP response with `decision=COMMIT`, `applied=true`, a non-em
 The payload is cloned and frozen before intent construction; the same snapshot is passed to the effect callback. This closes the ordinary object-substitution gap within this call, but it does not prove that downstream code or a remote node executes the same semantics. End-to-end conformance still requires tests against ComOS's real served `order_create` path and node-side payload binding.
 
 Required integration tests in ComOS:
-- BLOCK/timeout/malformed EGA response => no ACT enqueued and no pending order created.
-- COMMIT => enqueued ACT payload matches the authorized intent's execution-relevant fields.
-- Mutation or substitution after authorization => rejected or requires fresh authorization.
-- Verify downstream node execution is bound to the authorized payload; transport metadata alone is insufficient if the result/payload is not signed or otherwise integrity-bound.
+- BLOCK/timeout/malformed EGA response => no inventory reservation, order creation, or other protected node effect.
+- COMMIT => the ACT and node prices used for authorization match those used by the protected effect.
+- Changing command_id, tenant, product, quantity, node price, or total changes the digest or fails scope validation.
+- Issuer scope denial => no signed authority and no effect.
+- Replay, expiry, digest mismatch, or stale product/catalog epoch => no effect.
+- Hub billing, payer balance, expected-price reconciliation, and settlement checks remain active.
