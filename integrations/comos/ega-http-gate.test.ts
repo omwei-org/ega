@@ -13,7 +13,11 @@ const intent = {
   principal: "comos-test",
   action: "order_create",
   target: "tenant:test-vendor",
-  parameters: { items: [{ product_id: "p1", quantity: 1 }] },
+  parameters: {
+    items: [{ product_id: "p1", quantity: 1 }],
+    command_id: "cmd-0001",
+    action_digest: "0341012ba38a25a2be30c22ba24cdf2151d35fcda389c729bc6d1c0c00e5dcff",
+  },
   environment: "test",
 };
 
@@ -132,6 +136,18 @@ test("live EGA service accepts a valid request and blocks stale context", {
 
   await assert.rejects(
     () => gate.authorize({ authority, intent, context_epoch: 999 }),
+    EgaAuthorizationDenied,
+  );
+
+  const mismatchedAuthority = {
+    ...authority,
+    parameters: {
+      ...(authority.parameters as Record<string, JsonValue>),
+      action_digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
+  };
+  await assert.rejects(
+    () => gate.authorize({ authority: mismatchedAuthority, intent, context_epoch: 7 }),
     EgaAuthorizationDenied,
   );
 });
