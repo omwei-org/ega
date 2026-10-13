@@ -105,10 +105,10 @@ def load_scope() -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise RuntimeError("COMOS_ISSUER_SCOPE_JSON is invalid") from exc
     required = ("allowed_tenants", "allowed_products", "allowed_principals",
-                "max_quantity_per_item", "max_total_coms")
+                "allowed_environments", "max_quantity_per_item", "max_total_coms")
     if not isinstance(scope, dict) or any(key not in scope for key in required):
         raise RuntimeError("issuer scope is incomplete")
-    if not all(isinstance(scope[k], list) and scope[k] for k in required[:3]):
+    if not all(isinstance(scope[k], list) and scope[k] for k in required[:4]):
         raise RuntimeError("allowed scope lists must be non-empty")
     for field in ("max_quantity_per_item", "max_total_coms"):
         if isinstance(scope[field], bool) or not isinstance(scope[field], int) or scope[field] < 0:
@@ -143,6 +143,10 @@ def issue_authority(request: IssueRequest, *, scope: dict[str, Any],
         raise ValueError("tenant outside issuer scope")
     if request.principal not in scope["allowed_principals"]:
         raise ValueError("principal outside issuer scope")
+    if request.environment not in scope["allowed_environments"]:
+        raise ValueError("environment outside issuer scope")
+    if act.get("buyer_root") != request.principal:
+        raise ValueError("principal does not match hub-signed ACT buyer_root")
     items = act.get("items")
     if not isinstance(items, list) or not items:
         raise ValueError("ACT items must be a non-empty list")
