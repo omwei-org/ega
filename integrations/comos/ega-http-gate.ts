@@ -164,3 +164,61 @@ export class EgaHttpGate {
     return { result, permit };
   }
 }
+
+export interface ComosNodePricing {
+  items: Array<{ product_id: string; unit_price_coms: number }>;
+  total_coms: number;
+}
+
+function assertIntegerOnlyJson(value: JsonValue, path = "$"): void {
+  if (typeof value === "number" && !Number.isSafeInteger(value)) {
+    throw new TypeError(`Non-safe-integer number is forbidden in canonical action data at ${path}`);
+  }
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => assertIntegerOnlyJson(child, `${path}[${index}]`));
+  } else if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      assertIntegerOnlyJson(child, `${path}.${key}`);
+    }
+  }
+}
+
+/**
+ * Digest the exact ACT received by the node together with the node's pricing
+ * result. Cross-language contract: UTF-8 JSON, lexicographically sorted object
+ * keys, compact separators, arrays retain order, and all numeric values are
+ * safe integers. No float/NaN normalization is permitted.
+ *
+ * This identifies an action; it is not an authority or signature.
+ */
+export function canonicalActionDigest(act: JsonValue, nodePricing: ComosNodePricing): string {
+  if (act === null || Array.isArray(act) || typeof act !== "object") {
+    throw new TypeError("ACT must be a JSON object");
+  }
+  const actObject = act as Record<string, JsonValue>;
+  for (const field of ["kind", "command_id", "tenant_id"]) {
+    if (typeof actObject[field] !== "string" || !(actObject[field] as string).trim()) {
+      throw new TypeError(`ACT ${field} is required`);
+    }
+  }
+  if (!Array.isArray(nodePricing.items) || !Number.isSafeInteger(nodePricing.total_coms) || nodePricing.total_coms < 0) {
+    throw new TypeError("Node pricing must contain items and a non-negative integer total_coms");
+  }
+  for (const [index, item] of nodePricing.items.entries()) {
+    if (
+      !item.product_id.trim() ||
+      !Number.isSafeInteger(item.unit_price_coms) ||
+      item.unit_price_coms < 0
+    ) {
+      throw new TypeError(`Invalid node pricing item at index ${index}`);
+    }
+  }
+  assertIntegerOnlyJson(act);
+  const projection: JsonValue = {
+    schema: "comos-action-digest-v1",
+    act,
+    node_pricing: nodePricing as unknown as JsonValue,
+  };
+  assertIntegerOnlyJson(projection);
+  return fingerprint(projection);
+}
