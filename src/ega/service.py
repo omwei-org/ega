@@ -101,7 +101,10 @@ class ItemsItem(BaseModel):
 
 class Parameters(BaseModel):
     items: list[ItemsItem]
-    expected_total_coms: Optional[int] = None
+    expected_total_coms: Optional[int] = Field(default=None, ge=0)
+    # Optional for backward compatibility; required by the ComOS node-effect profile.
+    command_id: Optional[str] = Field(default=None, min_length=1, max_length=256)
+    action_digest: Optional[str] = Field(default=None, min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 class RuntimeIntentRequest(BaseModel):
     principal: str = Field(..., min_length=1)
@@ -236,7 +239,11 @@ def _convert_intent(request: RuntimeIntentRequest) -> RuntimeIntent:
                 for item in request.parameters.items
             ],
             **({"expected_total_coms": request.parameters.expected_total_coms}
-               if request.parameters.expected_total_coms is not None else {})
+               if request.parameters.expected_total_coms is not None else {}),
+            **({"command_id": request.parameters.command_id}
+               if request.parameters.command_id is not None else {}),
+            **({"action_digest": request.parameters.action_digest}
+               if request.parameters.action_digest is not None else {})
         },
         environment=request.environment,
         decision_ref=request.decision_ref or "",
