@@ -2,16 +2,34 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EgaAuthorizationDenied, EgaHttpGate, type JsonValue } from "./ega-http-gate.ts";
 
-function response(body: unknown, ok = true, status = 200): Response {
+function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
   });
 }
 
+const intent = {
+  principal: "comos-test",
+  action: "order_create",
+  target: "tenant:test-vendor",
+  parameters: { items: [{ product_id: "p1", quantity: 1 }] },
+  environment: "test",
+};
+
+const authority = {
+  authority_id: "auth-test",
+  principal: intent.principal,
+  action: intent.action,
+  target: intent.target,
+  parameters: intent.parameters,
+  environment: intent.environment,
+  source_decision: "decision-test",
+};
+
 const commit = {
   decision: "COMMIT",
-  reason: "AUTHORITY_VALID",
+  reason: "VALID",
   applied: true,
   effect: "NOT_EXECUTED",
 };
@@ -21,24 +39,27 @@ test("BLOCK prevents the protected callback", async () => {
   const gate = new EgaHttpGate({
     baseUrl: "http://ega.test",
     fetchImpl: async () => response({
-      decision: "BLOCK", reason: "SCOPE_MISMATCH",
-      applied: false, effect: "NOT_EXECUTED",
+      decision: "BLOCK", reason: "STALE_CONTEXT",
+      applied: false, effect: "NONE",
     }),
   });
   await assert.rejects(() => gate.executeAuthorizedPayload({
-    payload: { order_id: "o-1", items: [{ sku: "p1", quantity: 1 }] },
-    authority: { authority_id: "a-1" },
+    payload: { items: [{ product_id: "p1", quantity: 1 }] },
+    authority,
     context_epoch: 7,
-    buildIntent: (payload) => ({ action: "order_create", parameters: payload }),
+    buildIntent: (payload) => ({
+      ...intent,
+      parameters: payload as JsonValue,
+    }),
     execute: () => { executed = true; },
   }), EgaAuthorizationDenied);
   assert.equal(executed, false);
 });
 
-test("COMMIT executes exactly the frozen payload used to derive intent", async () => {
+test("COMMIT executes the same snapshot used to derive intent", async () => {
   let posted: Record<string, unknown> | undefined;
   let executedPayload: Readonly<JsonValue> | undefined;
-  const original = { order_id: "o-1", items: [{ sku: "p1", quantity: 1 }] };
+  const original = { items: [{ product_id: "p1", quantity: 1 }] };
   const gate = new EgaHttpGate({
     baseUrl: "http://ega.test/",
     fetchImpl: async (_url, init) => {
@@ -48,33 +69,36 @@ test("COMMIT executes exactly the frozen payload used to derive intent", async (
   });
   const outcome = await gate.executeAuthorizedPayload({
     payload: original,
-    authority: { authority_id: "a-1" },
+    authority,
     context_epoch: 7,
-    buildIntent: (payload) => ({ action: "order_create", parameters: payload }),
+    buildIntent: (payload) => ({
+      ...intent,
+      parameters: payload as JsonValue,
+    }),
     execute: (payload) => { executedPayload = payload; return "queued"; },
   });
-  original.items[0].quantity = 99; // cannot alter the snapshot already authorized
+  original.items[0].quantity = 99;
   assert.equal(outcome.result, "queued");
   assert.deepEqual(executedPayload, {
-    order_id: "o-1", items: [{ sku: "p1", quantity: 1 }],
+    items: [{ product_id: "p1", quantity: 1 }],
   });
   assert.deepEqual(
-    (posted?.intent as Record<string, unknown>).parameters,
+    ((posted?.intent as Record<string, unknown>).parameters),
     executedPayload,
   );
 });
 
-test("timeout/transport failure denies and never executes", async () => {
+test("transport failure denies and never executes", async () => {
   let executed = false;
   const gate = new EgaHttpGate({
     baseUrl: "http://ega.test",
     fetchImpl: async () => { throw new Error("offline"); },
   });
   await assert.rejects(() => gate.executeAuthorizedPayload({
-    payload: { order_id: "o-1" },
-    authority: { authority_id: "a-1" },
-    context_epoch: 1,
-    buildIntent: (payload) => ({ action: "order_create", parameters: payload }),
+    payload: { items: [{ product_id: "p1", quantity: 1 }] },
+    authority,
+    context_epoch: 7,
+    buildIntent: (payload) => ({ ...intent, parameters: payload as JsonValue }),
     execute: () => { executed = true; },
   }), EgaAuthorizationDenied);
   assert.equal(executed, false);
@@ -86,7 +110,7 @@ test("malformed response and non-success HTTP status deny", async () => {
     fetchImpl: async () => response({ decision: "COMMIT", applied: true }),
   });
   await assert.rejects(() => malformed.authorize({
-    authority: {}, intent: {}, context_epoch: 1,
+    authority, intent, context_epoch: 7,
   }), EgaAuthorizationDenied);
 
   const unavailable = new EgaHttpGate({
@@ -94,6 +118,20 @@ test("malformed response and non-success HTTP status deny", async () => {
     fetchImpl: async () => new Response("unavailable", { status: 503 }),
   });
   await assert.rejects(() => unavailable.authorize({
-    authority: {}, intent: {}, context_epoch: 1,
+    authority, intent, context_epoch: 7,
   }), EgaAuthorizationDenied);
+});
+
+test("live EGA service accepts a valid request and blocks stale context", {
+  skip: !process.env.EGA_REAL_SERVICE_URL,
+}, async () => {
+  const gate = new EgaHttpGate({ baseUrl: process.env.EGA_REAL_SERVICE_URL! });
+  const permit = await gate.authorize({ authority, intent, context_epoch: 7 });
+  assert.equal(permit.decision, "COMMIT");
+  assert.equal(permit.effect, "NOT_EXECUTED");
+
+  await assert.rejects(
+    () => gate.authorize({ authority, intent, context_epoch: 999 }),
+    EgaAuthorizationDenied,
+  );
 });
