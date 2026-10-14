@@ -82,7 +82,12 @@ def action_digest(act: dict[str, Any], pricing: NodePricing) -> str:
 
 
 def verify_hub_act_signature(act: dict[str, Any], signature: str) -> None:
-    """Verify hub provenance; the issuer never treats node-supplied ACT as trusted."""
+    """Verify Hub provenance using Base64 raw 32-byte Ed25519 public key.
+
+    The Hub holds the matching Base64 raw 32-byte Ed25519 seed; its detached
+    signature covers canonical_json(act), including command_id. This matches
+    tweetnacl.sign.keyPair.fromSeed() on the Hub.
+    """
     raw_key = os.getenv("COMOS_HUB_ACT_PUBLIC_KEY_B64", "")
     if not raw_key:
         raise RuntimeError("COMOS_HUB_ACT_PUBLIC_KEY_B64 is required; issuer fails closed")
@@ -117,6 +122,7 @@ def load_scope() -> dict[str, Any]:
 
 
 def load_private_key() -> Ed25519PrivateKey:
+    """Load the issuer's own Base64 raw 32-byte Ed25519 private seed."""
     raw = os.getenv("COMOS_ISSUER_PRIVATE_KEY_B64", "")
     if not raw:
         raise RuntimeError("COMOS_ISSUER_PRIVATE_KEY_B64 is required; issuer fails closed")

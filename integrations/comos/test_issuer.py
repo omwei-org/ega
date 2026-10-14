@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from pydantic import ValidationError
 
 from issuer import IssueRequest, NodePricing, action_digest, canonical_json, issue_authority
 
@@ -72,6 +73,30 @@ def test_issuer_rejects_bad_hub_signature():
     request = request.model_copy(update={"act_signature": base64.b64encode(b"not a signature").decode()})
     with pytest.raises(ValueError):
         issue_authority(request, scope=scope, private_key=key)
+
+
+def test_issuer_rejects_malformed_base64_signature():
+    _, key, request, scope = fixture_data()
+    request = request.model_copy(update={"act_signature": "%%%not-base64%%%"})
+    with pytest.raises(ValueError):
+        issue_authority(request, scope=scope, private_key=key)
+
+
+def test_issuer_rejects_modified_act_with_original_signature():
+    _, key, request, scope = fixture_data()
+    tampered = dict(request.act)
+    tampered["tenant_id"] = "tenant-attacker"
+    request = request.model_copy(update={"act": tampered})
+    with pytest.raises(ValueError):
+        issue_authority(request, scope=scope, private_key=key)
+
+
+def test_issuer_request_rejects_missing_signature():
+    _, _, request, _ = fixture_data()
+    with pytest.raises(ValidationError):
+        IssueRequest.model_validate({
+            **request.model_dump(), "act_signature": ""
+        })
 
 
 def test_issuer_rejects_price_total_mismatch():
