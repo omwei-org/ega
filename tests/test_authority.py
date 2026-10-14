@@ -114,3 +114,11 @@ def test_boolean_does_not_match_numeric_equality_constraint():
     scope = make_scope(parameter_constraints={"value": {"equals": 1}})
     with pytest.raises(AuthorizationError, match="outside authorization scope"):
         issue_authority(intent, scope)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_value_fails_even_under_equality_constraint(value):
+    intent = make_intent(parameters={"value": value})
+    scope = make_scope(parameter_constraints={"value": {"equals": value}})
+    with pytest.raises(AuthorizationError, match="outside authorization scope"):
+        issue_authority(intent, scope)
