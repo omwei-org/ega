@@ -19,8 +19,17 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-from .evidence import decision_record_digest
-from .models import DecisionRecord, ExecutionAuthority
+from .evidence import (
+    authorization_scope_digest,
+    decision_record_digest,
+    runtime_intent_digest,
+)
+from .models import (
+    AuthorizationScope,
+    DecisionRecord,
+    ExecutionAuthority,
+    RuntimeIntent,
+)
 
 
 class AuthorityEnvelopeError(ValueError):
@@ -121,14 +130,16 @@ def verify_signed_authority(
     now: int,
     is_revoked: Callable[[str], bool],
     decision_record_resolver: Callable[[str], DecisionRecord] | None = None,
+    intent_resolver: Callable[[str], RuntimeIntent] | None = None,
+    scope_resolver: Callable[[str], AuthorizationScope] | None = None,
 ) -> dict[str, Any]:
     """Verify origin, integrity, decision-record content, time bounds, and revocation.
 
-    Both revocation and decision-record resolution are mandatory trusted
-    dependencies. The resolver must retrieve the record from an authenticated
-    source by reference. The verifier recomputes its digest; a signed reference
-    alone is not proof that the referenced record exists or has the claimed content.
-    Providers that fail or return unexpected values fail closed.
+    Revocation, decision-record, runtime-intent, and authorization-scope
+    resolution are mandatory trusted dependencies. Each resolver must retrieve
+    the canonical object from an authenticated source. The verifier recomputes
+    the digest and cross-checks the decision record's references against the
+    resolved intent and scope. All missing or inconsistent links fail closed.
     """
     if not isinstance(expected_issuer, str) or not expected_issuer:
         raise AuthorityEnvelopeError("trusted expected_issuer is required")
@@ -138,6 +149,10 @@ def verify_signed_authority(
         raise AuthorityEnvelopeError("trusted revocation provider is required")
     if not callable(decision_record_resolver):
         raise AuthorityEnvelopeError("trusted decision-record resolver is required")
+    if not callable(intent_resolver):
+        raise AuthorityEnvelopeError("trusted runtime-intent resolver is required")
+    if not callable(scope_resolver):
+        raise AuthorityEnvelopeError("trusted authorization-scope resolver is required")
     try:
         envelope = json.loads(artifact.decode("utf-8"))
     except (AttributeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -211,6 +226,49 @@ def verify_signed_authority(
         raise AuthorityEnvelopeError("decision-record digest computation failed") from exc
     if actual_record_digest != normalized["decision_record_digest"]:
         raise AuthorityEnvelopeError("decision-record digest mismatch")
+
+    if not record.intent_digest or not record.authorization_scope_digest:
+        raise AuthorityEnvelopeError("decision record lacks intent/scope digest bindings")
+    try:
+        intent = intent_resolver(record.intent_ref)
+    except Exception as exc:
+        raise AuthorityEnvelopeError("runtime-intent resolution failed") from exc
+    if not isinstance(intent, RuntimeIntent):
+        raise AuthorityEnvelopeError("runtime-intent resolver returned an invalid intent")
+    if intent.intent_ref != record.intent_ref or intent.decision_ref != record.decision_id:
+        raise AuthorityEnvelopeError("resolved runtime intent reference/decision mismatch")
+    if runtime_intent_digest(intent) != record.intent_digest:
+        raise AuthorityEnvelopeError("runtime-intent digest mismatch")
+    try:
+        scope = scope_resolver(record.authorization_scope_ref)
+    except Exception as exc:
+        raise AuthorityEnvelopeError("authorization-scope resolution failed") from exc
+    if not isinstance(scope, AuthorizationScope):
+        raise AuthorityEnvelopeError("authorization-scope resolver returned an invalid scope")
+    if scope.scope_ref != record.authorization_scope_ref:
+        raise AuthorityEnvelopeError("resolved authorization-scope reference mismatch")
+    if authorization_scope_digest(scope) != record.authorization_scope_digest:
+        raise AuthorityEnvelopeError("authorization-scope digest mismatch")
+    if (
+        intent.principal != normalized["principal"]
+        or intent.action != normalized["action"]
+        or intent.target != normalized["target"]
+        or intent.environment != normalized["environment"]
+        or intent.parameters != normalized["parameters"]
+    ):
+        raise AuthorityEnvelopeError("authority does not match resolved runtime intent")
+    if (
+        intent.principal != scope.principal
+        or intent.action != scope.action
+        or intent.target != scope.target
+        or intent.environment != scope.environment
+    ):
+        raise AuthorityEnvelopeError("resolved intent is outside resolved authorization scope")
+    evidence_refs = {item.evidence_ref for item in record.evidence_items}
+    if len(evidence_refs) != len(record.evidence_items):
+        raise AuthorityEnvelopeError("decision record contains duplicate evidence references")
+    if any(condition.evidence_ref not in evidence_refs for condition in record.aee_conditions):
+        raise AuthorityEnvelopeError("AEE condition references evidence absent from decision record")
     return normalized
 
 
@@ -244,6 +302,18 @@ def issue_signed_authority(
         raise AuthorityEnvelopeError("scope must be an EGA AuthorizationScope")
     if not isinstance(decision_record, DecisionRecord):
         raise AuthorityEnvelopeError("a concrete EGA DecisionRecord is required")
+    if not intent.intent_ref:
+        raise AuthorityEnvelopeError("intent.intent_ref is required for signed issuance")
+    if not scope.scope_ref:
+        raise AuthorityEnvelopeError("scope.scope_ref is required for signed issuance")
+    if decision_record.intent_ref != intent.intent_ref:
+        raise AuthorityEnvelopeError("decision record intent_ref does not match runtime intent")
+    if decision_record.authorization_scope_ref != scope.scope_ref:
+        raise AuthorityEnvelopeError("decision record authorization_scope_ref does not match scope")
+    if decision_record.intent_digest != runtime_intent_digest(intent):
+        raise AuthorityEnvelopeError("decision record must bind the exact runtime intent digest")
+    if decision_record.authorization_scope_digest != authorization_scope_digest(scope):
+        raise AuthorityEnvelopeError("decision record must bind the exact authorization scope digest")
     authority = issue_authority(
         intent,
         scope,
