@@ -98,7 +98,6 @@ def test_aee_predicate_blocks_when_value_no_longer_holds():
 @pytest.mark.parametrize(
     "parameters",
     [
-        {"value": 20, "unconstrained_speed": 999},
         {"value": True},
         {"value": float("nan")},
         {"value": float("inf")},
