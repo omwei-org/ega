@@ -23,8 +23,11 @@ def _matches_constraint(value: Any, constraint: Any) -> bool:
     if isinstance(constraint, dict):
         if "equals" in constraint:
             expected = constraint["equals"]
-            # Python considers True == 1 and False == 0; authorization scope
-            # must not collapse boolean and numeric parameter types.
+            # Reject non-finite numeric values even when an equality constraint
+            # happens to contain the same infinity. Never collapse bool/int.
+            for candidate in (value, expected):
+                if isinstance(candidate, (int, float)) and not _is_finite_number(candidate):
+                    return False
             if isinstance(value, bool) != isinstance(expected, bool) or value != expected:
                 return False
         for bound_name, comparison in (("min", lambda v, b: v >= b), ("max", lambda v, b: v <= b)):
