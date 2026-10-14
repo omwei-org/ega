@@ -89,6 +89,22 @@ In particular:
 
 This preserves the architectural separation established by the EABC profile: **governance evidence explains authority issuance; AEE declares what must still be true for commit.**
 
+## Parameter-scope semantics and deployment caveat
+
+In the reference implementation, `AuthorizationScope.parameter_constraints`
+checks only the parameter names declared in that mapping. It does not currently
+require every key in `RuntimeIntent.parameters` to have an explicit constraint.
+All intent parameters are copied into the resulting authority and cryptographically
+bound by the signed profile, but a signature does not mean each parameter was
+individually bounded by policy.
+
+For safety-critical deployments (including robot motion), provision a complete
+parameter schema or add an explicit policy that rejects undeclared parameters.
+Do not treat cryptographic binding as a substitute for authorization constraints.
+The current reference model preserves partial-constraint semantics for existing
+Observer/ComOS use cases; it fails closed for non-finite numeric values and avoids
+Python's boolean/numeric equality confusion.
+
 ## Evidence and integrity boundary
 
 EABC Core requires evidence correlation to be intrinsically bound to the integrity protection of the artifact carrying the correlation reference. The current Python implementation records deterministic references and digests but does not provide signed or tamper-resistant artifacts.

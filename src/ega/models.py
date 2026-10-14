@@ -9,6 +9,7 @@ class RuntimeIntent:
     parameters: dict[str, Any]
     environment: str
     decision_ref: str
+    intent_ref: str | None = None
     governance_context: dict[str, Any] = field(default_factory=dict)
     evidence: dict[str, Any] = field(default_factory=dict)
 
@@ -20,6 +21,7 @@ class AuthorizationScope:
     target: str
     environment: str
     parameter_constraints: dict[str, Any] = field(default_factory=dict)
+    scope_ref: str | None = None
 
 @dataclass(frozen=True)
 class ObserverObservation:
@@ -67,6 +69,8 @@ class DecisionRecord:
     decision_time: str
     intent_ref: str
     authorization_scope_ref: str
+    intent_digest: str | None = None
+    authorization_scope_digest: str | None = None
     evidence_items: tuple[EvidenceItem, ...] = field(default_factory=tuple)
     aee_conditions: tuple[AEECondition, ...] = field(default_factory=tuple)
 
