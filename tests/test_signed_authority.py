@@ -126,3 +126,86 @@ def test_tampered_signature_fails(authority, key):
     envelope["signature"] = "AAAA"
     with pytest.raises(AuthorityEnvelopeError, match="signature verification failed"):
         verify(json.dumps(envelope).encode(), key)
+
+
+def test_preferred_issuance_entry_point_evaluates_scope_and_binds_decision_record(key):
+    from ega.models import AuthorizationScope, DecisionRecord, RuntimeIntent
+    from ega.signed_authority import issue_signed_authority
+
+    intent = RuntimeIntent(
+        principal="robot-controller",
+        action="move",
+        target="so100-01",
+        parameters={"x": 1.0},
+        environment="lab-1",
+        decision_ref="decision-9",
+    )
+    scope = AuthorizationScope(
+        principal="robot-controller",
+        action="move",
+        target="so100-01",
+        environment="lab-1",
+        parameter_constraints={"x": {"min": 0, "max": 2}},
+    )
+    record = DecisionRecord(
+        decision_id="decision-9",
+        decision_time="2026-10-14T08:00:00Z",
+        intent_ref="intent-9",
+        authorization_scope_ref="scope-9",
+    )
+    artifact = issue_signed_authority(
+        intent,
+        scope,
+        decision_record=record,
+        private_key=key,
+        issuer="ega-prod",
+        key_id="ega-key-1",
+        issued_at=100,
+        not_before=100,
+        expires_at=200,
+        jti="authority-jti-9",
+    )
+    claims = verify(artifact, key)
+    assert claims["parameters"] == {"x": 1.0}
+    assert claims["decision_record_ref"] == "decision-9"
+    assert claims["decision_record_digest"]
+
+
+def test_preferred_issuance_entry_point_rejects_out_of_scope_intent(key):
+    from ega.models import AuthorizationScope, DecisionRecord, RuntimeIntent
+    from ega.signed_authority import issue_signed_authority
+
+    intent = RuntimeIntent(
+        principal="robot-controller",
+        action="move",
+        target="so100-01",
+        parameters={"x": 99.0},
+        environment="lab-1",
+        decision_ref="decision-10",
+    )
+    scope = AuthorizationScope(
+        principal="robot-controller",
+        action="move",
+        target="so100-01",
+        environment="lab-1",
+        parameter_constraints={"x": {"min": 0, "max": 2}},
+    )
+    record = DecisionRecord(
+        decision_id="decision-10",
+        decision_time="2026-10-14T08:00:00Z",
+        intent_ref="intent-10",
+        authorization_scope_ref="scope-10",
+    )
+    with pytest.raises(Exception, match="outside authorization scope"):
+        issue_signed_authority(
+            intent,
+            scope,
+            decision_record=record,
+            private_key=key,
+            issuer="ega-prod",
+            key_id="ega-key-1",
+            issued_at=100,
+            not_before=100,
+            expires_at=200,
+            jti="authority-jti-10",
+        )
