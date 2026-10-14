@@ -3,7 +3,7 @@ import json
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from ega.models import DecisionRecord, ExecutionAuthority
+from ega.models import DecisionRecord, EvidenceItem, ExecutionAuthority
 from ega.signed_authority import (
     AuthorityEnvelopeError,
     sign_authority,
@@ -259,3 +259,26 @@ def test_signed_authority_requires_resolver(authority, key):
             now=150,
             is_revoked=lambda _jti: False,
         )
+
+
+
+def test_decision_record_digest_rejects_non_finite_evidence_values():
+    from ega.evidence import decision_record_digest
+
+    record = DecisionRecord(
+        decision_id="decision-nan",
+        decision_time="2026-10-14T08:00:00Z",
+        intent_ref="intent-nan",
+        authorization_scope_ref="scope-nan",
+        evidence_items=(
+            EvidenceItem(
+                evidence_ref="sensor-1",
+                digest="sha256:sample",
+                observed_at="2026-10-14T08:00:00Z",
+                evaluation_status="VALID",
+                value=float("nan"),
+            ),
+        ),
+    )
+    with pytest.raises(ValueError):
+        decision_record_digest(record)
