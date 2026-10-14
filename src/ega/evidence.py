@@ -5,7 +5,17 @@ from hashlib import sha256
 import json
 from typing import Any
 
-from .models import DecisionRecord, ExecutionAttestation
+from .models import AuthorizationScope, DecisionRecord, ExecutionAttestation, RuntimeIntent
+
+
+def runtime_intent_digest(intent: RuntimeIntent) -> str:
+    """Digest the complete runtime intent used for authority issuance."""
+    return sha256(canonical_json(asdict(intent))).hexdigest()
+
+
+def authorization_scope_digest(scope: AuthorizationScope) -> str:
+    """Digest the complete provisioning-time scope used for authority issuance."""
+    return sha256(canonical_json(asdict(scope))).hexdigest()
 
 
 def decision_record_digest(record: DecisionRecord) -> str:
@@ -14,6 +24,8 @@ def decision_record_digest(record: DecisionRecord) -> str:
         "decision_time": record.decision_time,
         "intent_ref": record.intent_ref,
         "authorization_scope_ref": record.authorization_scope_ref,
+        "intent_digest": record.intent_digest,
+        "authorization_scope_digest": record.authorization_scope_digest,
         "evidence_items": [
             {
                 "evidence_ref": item.evidence_ref,
