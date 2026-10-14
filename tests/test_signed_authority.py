@@ -98,6 +98,7 @@ def verify(artifact, key, **overrides):
         decision_record_resolver=lambda record_id: decision_record(record_id),
         intent_resolver=lambda intent_ref: runtime_intent(intent_ref=intent_ref),
         scope_resolver=lambda scope_ref: authorization_scope(scope_ref=scope_ref),
+        evidence_resolver=lambda evidence_ref: (_ for _ in ()).throw(KeyError(evidence_ref)),
     )
     args.update(overrides)
     return verify_signed_authority(artifact, **args)
@@ -308,6 +309,9 @@ def test_signed_authority_requires_resolver(authority, key):
             now=150,
             is_revoked=lambda _jti: False,
             decision_record_resolver=lambda ref: decision_record(ref),
+            intent_resolver=lambda ref: runtime_intent(intent_ref=ref),
+            scope_resolver=lambda ref: authorization_scope(scope_ref=ref),
+            evidence_resolver=lambda ref: (_ for _ in ()).throw(KeyError(ref)),
         )
 
 
@@ -358,3 +362,35 @@ def test_signed_authority_rejects_aee_condition_without_evidence(authority, key)
     )
     with pytest.raises(AuthorityEnvelopeError, match="AEE condition references evidence absent"):
         verify(artifact, key, decision_record_resolver=lambda _ref: record)
+
+
+
+def test_signed_authority_rejects_noncanonical_resolved_evidence_item(authority, key):
+    from ega.models import EvidenceItem
+
+    item = EvidenceItem(
+        evidence_ref="sensor-1",
+        digest="sha256:canonical",
+        observed_at="2026-10-14T08:00:00Z",
+        evaluation_status="USED",
+        role="commit_condition",
+    )
+    record = decision_record(evidence_items=(item,))
+    changed = EvidenceItem(
+        evidence_ref="sensor-1",
+        digest="sha256:attacker-substitution",
+        observed_at="2026-10-14T08:00:00Z",
+        evaluation_status="USED",
+        role="commit_condition",
+    )
+    artifact = sign_authority(
+        {**authority.__dict__, "decision_record_digest": decision_record_digest(record)},
+        private_key=key, issuer="ega-prod", key_id="ega-key-1",
+        issued_at=100, not_before=100, expires_at=200, jti="evidence-substitution",
+    )
+    with pytest.raises(AuthorityEnvelopeError, match="does not match decision record"):
+        verify(
+            artifact, key,
+            decision_record_resolver=lambda _ref: record,
+            evidence_resolver=lambda _ref: changed,
+        )
