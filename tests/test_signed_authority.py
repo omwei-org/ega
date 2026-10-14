@@ -196,7 +196,7 @@ def test_preferred_issuance_entry_point_rejects_out_of_scope_intent(key):
         intent_ref="intent-10",
         authorization_scope_ref="scope-10",
     )
-    with pytest.raises(Exception, match="outside authorization scope"):
+    from ega.authority import AuthorizationError\n    with pytest.raises(AuthorizationError, match="outside authorization scope"):
         issue_signed_authority(
             intent,
             scope,
