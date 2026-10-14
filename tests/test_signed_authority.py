@@ -75,7 +75,7 @@ def test_modified_authority_claims_fail_signature(authority, key):
 def test_untrusted_key_fails_closed(authority, key):
     artifact = sign(authority, key)
     other = Ed25519PrivateKey.generate()
-    with pytest.raises(AuthorityEnvelopeError, match="key is not trusted"):
+    with pytest.raises(AuthorityEnvelopeError, match="signature verification failed"):
         verify(artifact, other)
 
 
@@ -117,7 +117,7 @@ def test_signing_requires_decision_record_lineage(key):
         environment="lab-1",
         source_decision="decision-8",
     )
-    with pytest.raises(AuthorityEnvelopeError, match="decision lineage"):
+    with pytest.raises(AuthorityEnvelopeError, match="decision_record_ref"):
         sign(authority, key)
 
 
