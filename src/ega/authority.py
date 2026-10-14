@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from .evidence import decision_record_digest
+from .evidence import authorization_scope_digest, decision_record_digest, runtime_intent_digest
 from .models import AuthorizationScope, DecisionRecord, ExecutionAuthority, RuntimeIntent
 
 
@@ -79,8 +79,23 @@ def issue_authority(
     if decision_record is not None:
         if decision_record.decision_id != intent.decision_ref:
             raise ValueError("decision record does not match runtime intent decision_ref")
-        if decision_record.authorization_scope_ref == "":
+        if not decision_record.authorization_scope_ref:
             raise ValueError("decision record authorization_scope_ref is required")
+        if intent.intent_ref is not None and decision_record.intent_ref != intent.intent_ref:
+            raise ValueError("decision record does not match runtime intent reference")
+        if scope.scope_ref is not None and decision_record.authorization_scope_ref != scope.scope_ref:
+            raise ValueError("decision record does not match authorization scope reference")
+        expected_intent_digest = runtime_intent_digest(intent)
+        expected_scope_digest = authorization_scope_digest(scope)
+        if decision_record.intent_digest is not None and decision_record.intent_digest != expected_intent_digest:
+            raise ValueError("decision record does not match runtime intent digest")
+        if decision_record.authorization_scope_digest is not None and decision_record.authorization_scope_digest != expected_scope_digest:
+            raise ValueError("decision record does not match authorization scope digest")
+        evidence_refs = {item.evidence_ref for item in decision_record.evidence_items}
+        if len(evidence_refs) != len(decision_record.evidence_items):
+            raise ValueError("decision record contains duplicate evidence references")
+        if any(condition.evidence_ref not in evidence_refs for condition in decision_record.aee_conditions):
+            raise ValueError("AEE condition references evidence absent from decision record")
 
     return ExecutionAuthority(
         authority_id=authority_id, principal=intent.principal, action=intent.action,
