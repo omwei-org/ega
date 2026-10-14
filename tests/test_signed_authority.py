@@ -18,6 +18,7 @@ def key():
 
 @pytest.fixture
 def authority():
+    record = decision_record()
     return ExecutionAuthority(
         authority_id="auth-1",
         principal="robot-controller",
@@ -75,7 +76,7 @@ def test_signed_authority_round_trip_binds_decision_lineage(authority, key):
     assert verified["authority_id"] == "auth-1"
     assert verified["source_decision"] == "decision-7"
     assert verified["decision_record_ref"] == "decision-7"
-    assert verified["decision_record_digest"] == "sha256:decision-digest"
+    assert verified["decision_record_digest"] == __import__("ega.evidence", fromlist=["decision_record_digest"]).decision_record_digest(record)
 
 
 def test_modified_authority_claims_fail_signature(authority, key):
