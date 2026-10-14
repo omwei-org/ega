@@ -19,7 +19,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-from .models import ExecutionAuthority
+from .evidence import decision_record_digest
+from .models import DecisionRecord, ExecutionAuthority
 
 
 class AuthorityEnvelopeError(ValueError):
@@ -119,12 +120,15 @@ def verify_signed_authority(
     expected_issuer: str,
     now: int,
     is_revoked: Callable[[str], bool],
+    decision_record_resolver: Callable[[str], DecisionRecord],
 ) -> dict[str, Any]:
-    """Verify origin, integrity, scope lineage, time bounds, and revocation.
+    """Verify origin, integrity, decision-record content, time bounds, and revocation.
 
-    A revocation provider is mandatory. It must return literal False for a
-    currently non-revoked JTI and literal True for a revoked JTI; exceptions
-    or non-boolean results fail closed.
+    Both revocation and decision-record resolution are mandatory trusted
+    dependencies. The resolver must retrieve the record from an authenticated
+    source by reference. The verifier recomputes its digest; a signed reference
+    alone is not proof that the referenced record exists or has the claimed content.
+    Providers that fail or return unexpected values fail closed.
     """
     if not isinstance(expected_issuer, str) or not expected_issuer:
         raise AuthorityEnvelopeError("trusted expected_issuer is required")
@@ -132,6 +136,8 @@ def verify_signed_authority(
         raise AuthorityEnvelopeError("trusted current time is required")
     if not callable(is_revoked):
         raise AuthorityEnvelopeError("trusted revocation provider is required")
+    if not callable(decision_record_resolver):
+        raise AuthorityEnvelopeError("trusted decision-record resolver is required")
     try:
         envelope = json.loads(artifact.decode("utf-8"))
     except (AttributeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -186,6 +192,25 @@ def verify_signed_authority(
     if sha256(_canonical_json(authority)).hexdigest() != claims.get("authority_sha256"):
         raise AuthorityEnvelopeError("authority digest mismatch")
     normalized = _authority_mapping(authority)
+    record_ref = normalized["decision_record_ref"]
+    if normalized["source_decision"] != record_ref:
+        raise AuthorityEnvelopeError("source decision does not match decision-record reference")
+    try:
+        record = decision_record_resolver(record_ref)
+    except Exception as exc:
+        raise AuthorityEnvelopeError("decision-record resolution failed") from exc
+    if not isinstance(record, DecisionRecord):
+        raise AuthorityEnvelopeError("decision-record resolver returned an invalid record")
+    if record.decision_id != record_ref:
+        raise AuthorityEnvelopeError("resolved decision-record ID does not match signed reference")
+    if not record.authorization_scope_ref or not record.intent_ref:
+        raise AuthorityEnvelopeError("resolved decision record has incomplete lineage")
+    try:
+        actual_record_digest = decision_record_digest(record)
+    except Exception as exc:
+        raise AuthorityEnvelopeError("decision-record digest computation failed") from exc
+    if actual_record_digest != normalized["decision_record_digest"]:
+        raise AuthorityEnvelopeError("decision-record digest mismatch")
     return normalized
 
 
