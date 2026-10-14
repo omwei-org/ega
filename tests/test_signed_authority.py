@@ -3,7 +3,7 @@ import json
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from ega.models import ExecutionAuthority
+from ega.models import DecisionRecord, ExecutionAuthority
 from ega.signed_authority import (
     AuthorityEnvelopeError,
     sign_authority,
@@ -27,7 +27,7 @@ def authority():
         environment="lab-1",
         source_decision="decision-7",
         decision_record_ref="decision-7",
-        decision_record_digest="sha256:decision-digest",
+        decision_record_digest=__import__("ega.evidence", fromlist=["decision_record_digest"]).decision_record_digest(record),
     )
 
 
@@ -45,12 +45,24 @@ def sign(authority, key, **overrides):
     return sign_authority(authority, **args)
 
 
+def decision_record(record_id="decision-7", **overrides):
+    values = dict(
+        decision_id=record_id,
+        decision_time="2026-10-14T08:00:00Z",
+        intent_ref="intent-7",
+        authorization_scope_ref="scope-7",
+    )
+    values.update(overrides)
+    return DecisionRecord(**values)
+
+
 def verify(artifact, key, **overrides):
     args = dict(
         trusted_keys={"ega-key-1": key.public_key()},
         expected_issuer="ega-prod",
         now=150,
         is_revoked=lambda _jti: False,
+        decision_record_resolver=lambda record_id: decision_record(record_id),
     )
     args.update(overrides)
     return verify_signed_authority(artifact, **args)
@@ -58,7 +70,8 @@ def verify(artifact, key, **overrides):
 
 def test_signed_authority_round_trip_binds_decision_lineage(authority, key):
     artifact = sign(authority, key)
-    verified = verify(artifact, key)
+    record = decision_record()
+    verified = verify(artifact, key, decision_record_resolver=lambda record_id: record)
     assert verified["authority_id"] == "auth-1"
     assert verified["source_decision"] == "decision-7"
     assert verified["decision_record_ref"] == "decision-7"
@@ -165,7 +178,13 @@ def test_preferred_issuance_entry_point_evaluates_scope_and_binds_decision_recor
         expires_at=200,
         jti="authority-jti-9",
     )
-    claims = verify(artifact, key)
+    record = DecisionRecord(
+        decision_id="decision-9",
+        decision_time="2026-10-14T08:00:00Z",
+        intent_ref="intent-9",
+        authorization_scope_ref="scope-9",
+    )
+    claims = verify(artifact, key, decision_record_resolver=lambda record_id: record)
     assert claims["parameters"] == {"x": 1.0}
     assert claims["decision_record_ref"] == "decision-9"
     assert claims["decision_record_digest"]
@@ -209,4 +228,33 @@ def test_preferred_issuance_entry_point_rejects_out_of_scope_intent(key):
             not_before=100,
             expires_at=200,
             jti="authority-jti-10",
+        )
+
+
+
+def test_signed_authority_rejects_missing_decision_record(authority, key):
+    with pytest.raises(AuthorityEnvelopeError, match="resolution failed"):
+        verify(sign(authority, key), key, decision_record_resolver=lambda _ref: (_ for _ in ()).throw(KeyError("missing")))
+
+
+def test_signed_authority_rejects_decision_record_digest_mismatch(authority, key):
+    wrong_record = decision_record("decision-7", intent_ref="different-intent")
+    with pytest.raises(AuthorityEnvelopeError, match="digest mismatch"):
+        verify(sign(authority, key), key, decision_record_resolver=lambda _ref: wrong_record)
+
+
+def test_signed_authority_rejects_decision_record_id_mismatch(authority, key):
+    wrong_record = decision_record("another-decision")
+    with pytest.raises(AuthorityEnvelopeError, match="ID does not match"):
+        verify(sign(authority, key), key, decision_record_resolver=lambda _ref: wrong_record)
+
+
+def test_signed_authority_requires_resolver(authority, key):
+    with pytest.raises(AuthorityEnvelopeError, match="resolver is required"):
+        verify_signed_authority(
+            sign(authority, key),
+            trusted_keys={"ega-key-1": key.public_key()},
+            expected_issuer="ega-prod",
+            now=150,
+            is_revoked=lambda _jti: False,
         )
