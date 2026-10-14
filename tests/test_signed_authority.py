@@ -247,6 +247,7 @@ def test_preferred_issuance_entry_point_rejects_out_of_scope_intent(key):
         parameters={"x": 99.0},
         environment="lab-1",
         decision_ref="decision-10",
+        intent_ref="intent-10",
     )
     scope = AuthorizationScope(
         principal="robot-controller",
@@ -254,12 +255,15 @@ def test_preferred_issuance_entry_point_rejects_out_of_scope_intent(key):
         target="so100-01",
         environment="lab-1",
         parameter_constraints={"x": {"min": 0, "max": 2}},
+        scope_ref="scope-10",
     )
     record = DecisionRecord(
         decision_id="decision-10",
         decision_time="2026-10-14T08:00:00Z",
         intent_ref="intent-10",
         authorization_scope_ref="scope-10",
+        intent_digest=runtime_intent_digest(intent),
+        authorization_scope_digest=authorization_scope_digest(scope),
     )
     from ega.authority import AuthorizationError
     with pytest.raises(AuthorizationError, match="outside authorization scope"):
