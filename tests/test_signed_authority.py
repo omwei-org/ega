@@ -393,3 +393,18 @@ def test_signed_authority_rejects_noncanonical_resolved_evidence_item(authority,
             decision_record_resolver=lambda _ref: record,
             evidence_resolver=lambda _ref: changed,
         )
+
+
+
+def test_signed_authority_rejects_governance_or_evidence_substitution(authority, key):
+    forged = {
+        **authority.__dict__,
+        "governance_context": {"policy_refs": ["attacker-policy"]},
+        "evidence": {"provenance": "attacker-source"},
+    }
+    artifact = sign_authority(
+        forged, private_key=key, issuer="ega-prod", key_id="ega-key-1",
+        issued_at=100, not_before=100, expires_at=200, jti="authority-context-substitution",
+    )
+    with pytest.raises(AuthorityEnvelopeError, match="does not match evaluated runtime intent"):
+        verify(artifact, key)
