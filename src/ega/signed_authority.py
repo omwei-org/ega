@@ -279,6 +279,7 @@ def verify_signed_authority(
         or evaluated.parameters != normalized["parameters"]
     ):
         raise AuthorityEnvelopeError("authority does not match evaluated runtime intent")
+
     evidence_refs = {item.evidence_ref for item in record.evidence_items}
     if len(evidence_refs) != len(record.evidence_items):
         raise AuthorityEnvelopeError("decision record contains duplicate evidence references")
