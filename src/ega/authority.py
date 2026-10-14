@@ -21,8 +21,12 @@ def _is_finite_number(value: Any) -> bool:
 
 def _matches_constraint(value: Any, constraint: Any) -> bool:
     if isinstance(constraint, dict):
-        if "equals" in constraint and value != constraint["equals"]:
-            return False
+        if "equals" in constraint:
+            expected = constraint["equals"]
+            # Python considers True == 1 and False == 0; authorization scope
+            # must not collapse boolean and numeric parameter types.
+            if isinstance(value, bool) != isinstance(expected, bool) or value != expected:
+                return False
         for bound_name, comparison in (("min", lambda v, b: v >= b), ("max", lambda v, b: v <= b)):
             if bound_name not in constraint:
                 continue
