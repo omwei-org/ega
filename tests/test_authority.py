@@ -93,3 +93,18 @@ def test_aee_predicate_blocks_when_value_no_longer_holds():
     current = EvidenceItem("e1", "d2", "2026-09-30T10:01:00Z", "USED", "commit_condition",
                            target="valve-v1", state="KNOWN", freshness="FRESH", uncertainty=0.15)
     assert final_authority_check(prepared, 1, current_evidence={"e1": current}) == "AEE_CONDITION_FAILED:UNCERTAINTY_MAX_EXCEEDED"
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"value": 20, "unconstrained_speed": 999},
+        {"value": True},
+        {"value": float("nan")},
+        {"value": float("inf")},
+    ],
+)
+def test_unbounded_or_non_finite_runtime_parameters_fail_closed(parameters):
+    intent = make_intent(parameters=parameters)
+    with pytest.raises(AuthorizationError, match="outside authorization scope"):
+        issue_authority(intent, make_scope())
