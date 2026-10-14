@@ -257,13 +257,24 @@ def verify_signed_authority(
         or intent.parameters != normalized["parameters"]
     ):
         raise AuthorityEnvelopeError("authority does not match resolved runtime intent")
+    try:
+        # Re-run the policy evaluator against the resolved, digest-verified
+        # intent and scope. Identity equality alone is not parameter authorization.
+        from .authority import issue_authority
+        evaluated = issue_authority(
+            intent, scope, authority_id=normalized["authority_id"],
+            decision_record=record,
+        )
+    except Exception as exc:
+        raise AuthorityEnvelopeError("resolved intent is outside resolved authorization scope") from exc
     if (
-        intent.principal != scope.principal
-        or intent.action != scope.action
-        or intent.target != scope.target
-        or intent.environment != scope.environment
+        evaluated.principal != normalized["principal"]
+        or evaluated.action != normalized["action"]
+        or evaluated.target != normalized["target"]
+        or evaluated.environment != normalized["environment"]
+        or evaluated.parameters != normalized["parameters"]
     ):
-        raise AuthorityEnvelopeError("resolved intent is outside resolved authorization scope")
+        raise AuthorityEnvelopeError("authority does not match evaluated runtime intent")
     evidence_refs = {item.evidence_ref for item in record.evidence_items}
     if len(evidence_refs) != len(record.evidence_items):
         raise AuthorityEnvelopeError("decision record contains duplicate evidence references")
