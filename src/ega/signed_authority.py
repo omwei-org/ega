@@ -120,7 +120,7 @@ def verify_signed_authority(
     expected_issuer: str,
     now: int,
     is_revoked: Callable[[str], bool],
-    decision_record_resolver: Callable[[str], DecisionRecord],
+    decision_record_resolver: Callable[[str], DecisionRecord] | None = None,
 ) -> dict[str, Any]:
     """Verify origin, integrity, decision-record content, time bounds, and revocation.
 
