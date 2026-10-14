@@ -1,29 +1,61 @@
+from __future__ import annotations
+
+import math
 from typing import Any
-from .models import AuthorizationScope, DecisionRecord, ExecutionAuthority, RuntimeIntent
+
 from .evidence import decision_record_digest
+from .models import AuthorizationScope, DecisionRecord, ExecutionAuthority, RuntimeIntent
+
 
 class AuthorizationError(ValueError):
     """Raised when runtime intent is outside the provisioning-time authorization scope."""
+
+
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if isinstance(value, float) and not math.isfinite(value):
+        return False
+    return True
+
 
 def _matches_constraint(value: Any, constraint: Any) -> bool:
     if isinstance(constraint, dict):
         if "equals" in constraint and value != constraint["equals"]:
             return False
-        if "min" in constraint and (not isinstance(value, (int, float)) or value < constraint["min"]):
-            return False
-        if "max" in constraint and (not isinstance(value, (int, float)) or value > constraint["max"]):
-            return False
+        for bound_name, comparison in (("min", lambda v, b: v >= b), ("max", lambda v, b: v <= b)):
+            if bound_name not in constraint:
+                continue
+            bound = constraint[bound_name]
+            if not _is_finite_number(value) or not _is_finite_number(bound):
+                return False
+            if not comparison(value, bound):
+                return False
         return True
     return value == constraint
 
+
 def _within_scope(intent: RuntimeIntent, scope: AuthorizationScope) -> bool:
-    if (intent.principal != scope.principal or intent.action != scope.action or
-        intent.target != scope.target or intent.environment != scope.environment):
+    if (
+        intent.principal != scope.principal
+        or intent.action != scope.action
+        or intent.target != scope.target
+        or intent.environment != scope.environment
+    ):
+        return False
+
+    # Every executable parameter must be covered by the provisioned scope.
+    # Extra runtime keys must not silently become authorized just because all
+    # the keys that happened to be constrained were valid.
+    if set(intent.parameters) != set(scope.parameter_constraints):
         return False
     for name, constraint in scope.parameter_constraints.items():
-        if name not in intent.parameters or not _matches_constraint(intent.parameters[name], constraint):
+        if not isinstance(name, str) or not name:
+            return False
+        if not _matches_constraint(intent.parameters[name], constraint):
             return False
     return True
+
 
 def issue_authority(
     intent: RuntimeIntent,
