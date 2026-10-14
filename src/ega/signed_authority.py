@@ -282,6 +282,12 @@ def verify_signed_authority(
         or evaluated.target != normalized["target"]
         or evaluated.environment != normalized["environment"]
         or evaluated.parameters != normalized["parameters"]
+        or evaluated.governance_context != normalized.get("governance_context", {})
+        or evaluated.evidence != normalized.get("evidence", {})
+        or evaluated.source_decision != normalized["source_decision"]
+        or evaluated.decision_record_ref != normalized["decision_record_ref"]
+        or evaluated.decision_record_digest != normalized["decision_record_digest"]
+        or evaluated.aee_conditions != tuple(record.aee_conditions)
     ):
         raise AuthorityEnvelopeError("authority does not match evaluated runtime intent")
 
