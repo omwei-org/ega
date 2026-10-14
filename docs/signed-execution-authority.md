@@ -1,7 +1,9 @@
 # Signed EGA Execution Authority profile
 
 This optional profile adds an authenticated artifact format around the EGA
-reference model's `ExecutionAuthority`. The plain dataclass and its digest are
+reference model's `ExecutionAuthority`. Import it from
+`ega.signed_authority`; the base `ega` package does not import the optional
+cryptography dependency unless the signed profile is used. The plain dataclass and its digest are
 not authentication: callers can construct or modify them.
 
 ## Profile
