@@ -48,11 +48,6 @@ def _within_scope(intent: RuntimeIntent, scope: AuthorizationScope) -> bool:
     ):
         return False
 
-    # Every executable parameter must be covered by the provisioned scope.
-    # Extra runtime keys must not silently become authorized just because all
-    # the keys that happened to be constrained were valid.
-    if set(intent.parameters) != set(scope.parameter_constraints):
-        return False
     for name, constraint in scope.parameter_constraints.items():
         if not isinstance(name, str) or not name:
             return False
