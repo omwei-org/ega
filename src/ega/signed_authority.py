@@ -29,6 +29,7 @@ from .models import (
     DecisionRecord,
     ExecutionAuthority,
     RuntimeIntent,
+    EvidenceItem,
 )
 
 
@@ -132,6 +133,7 @@ def verify_signed_authority(
     decision_record_resolver: Callable[[str], DecisionRecord] | None = None,
     intent_resolver: Callable[[str], RuntimeIntent] | None = None,
     scope_resolver: Callable[[str], AuthorizationScope] | None = None,
+    evidence_resolver: Callable[[str], EvidenceItem] | None = None,
 ) -> dict[str, Any]:
     """Verify origin, integrity, decision-record content, time bounds, and revocation.
 
@@ -153,6 +155,8 @@ def verify_signed_authority(
         raise AuthorityEnvelopeError("trusted runtime-intent resolver is required")
     if not callable(scope_resolver):
         raise AuthorityEnvelopeError("trusted authorization-scope resolver is required")
+    if not callable(evidence_resolver):
+        raise AuthorityEnvelopeError("trusted evidence-item resolver is required")
     try:
         envelope = json.loads(artifact.decode("utf-8"))
     except (AttributeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -280,6 +284,15 @@ def verify_signed_authority(
         raise AuthorityEnvelopeError("decision record contains duplicate evidence references")
     if any(condition.evidence_ref not in evidence_refs for condition in record.aee_conditions):
         raise AuthorityEnvelopeError("AEE condition references evidence absent from decision record")
+    for item in record.evidence_items:
+        try:
+            resolved_item = evidence_resolver(item.evidence_ref)
+        except Exception as exc:
+            raise AuthorityEnvelopeError("evidence-item resolution failed") from exc
+        if not isinstance(resolved_item, EvidenceItem):
+            raise AuthorityEnvelopeError("evidence-item resolver returned an invalid item")
+        if resolved_item != item:
+            raise AuthorityEnvelopeError("resolved evidence item does not match decision record")
     return normalized
 
 
