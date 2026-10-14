@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 
 [project.optional-dependencies]
 test = ["pytest>=8,<9"]
+signed-authority = ["cryptography>=42"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
