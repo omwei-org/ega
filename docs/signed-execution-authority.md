@@ -31,16 +31,21 @@ The consumer pins trusted public keys and an expected issuer. A signature proves
 that the holder of the corresponding private key signed the claims; it does not
 make an incorrectly operated issuer trustworthy.
 
-The verifier also requires a trusted clock, a revocation provider, and a
-decision-record resolver. The resolver must fetch the canonical `DecisionRecord`
-from an authenticated source by the signed reference; the verifier checks the
-record ID, lineage fields, and recomputed content digest before returning the
-authority. Missing records, resolver errors, mismatched IDs, or digest mismatch
-fail closed.
+The verifier also requires a trusted clock, a revocation provider, and
+authenticated resolvers for the canonical `DecisionRecord`, `RuntimeIntent`,
+and `AuthorizationScope`. The decision record must carry the exact intent and
+scope references and their canonical SHA-256 digests. The verifier resolves each
+object independently, checks references and recomputed digests, and re-runs EGA's
+scope evaluator against the resolved intent and scope before returning authority.
+AEE conditions must reference evidence items actually present in the decision
+record; duplicate evidence references are rejected. Missing objects, lookup
+errors, reference mismatch, digest mismatch, or out-of-scope parameters fail
+closed.
 
-This proves that the resolved record content matches the signed digest. It does
-not independently prove that evidence referenced by the record is true, that
-the decision policy was correct, or that the resolver's store is authoritative.
+This proves that resolved object contents match their signed lineage digests and
+that the runtime intent passes the resolved scope constraints. It does not
+independently prove that evidence referenced by the record is true, that the
+decision policy was correct, or that the resolvers' stores are authoritative.
 Those remain upstream provenance and deployment responsibilities.
 
 Revocation provider failures, stale/unavailable data as reported by the provider,
