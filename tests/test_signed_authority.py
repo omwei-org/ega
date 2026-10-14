@@ -301,7 +301,7 @@ def test_signed_authority_rejects_decision_record_id_mismatch(authority, key):
 
 
 def test_signed_authority_requires_resolver(authority, key):
-    with pytest.raises(AuthorityEnvelopeError, match="runtime-intent resolver is required"):
+    with pytest.raises(AuthorityEnvelopeError, match="evidence-item resolver is required"):
         verify_signed_authority(
             sign(authority, key),
             trusted_keys={"ega-key-1": key.public_key()},
@@ -311,7 +311,6 @@ def test_signed_authority_requires_resolver(authority, key):
             decision_record_resolver=lambda ref: decision_record(ref),
             intent_resolver=lambda ref: runtime_intent(intent_ref=ref),
             scope_resolver=lambda ref: authorization_scope(scope_ref=ref),
-            evidence_resolver=lambda ref: (_ for _ in ()).throw(KeyError(ref)),
         )
 
 
