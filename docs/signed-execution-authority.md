@@ -17,9 +17,11 @@ not authentication: callers can construct or modify them.
   and the decision-record reference/digest.
 
 The signer requires a non-empty `decision_record_ref` and
-`decision_record_digest`. This strict signed profile therefore requires EGA
-issuance to be linked to a concrete decision record, even though the base
-semantic model permits issuing an unsigned authority without one.
+`decision_record_digest`. The preferred `issue_signed_authority()` entry point
+calls EGA's `issue_authority()` first with a concrete `DecisionRecord`, so
+scope evaluation and decision-record linkage happen before signing. The lower-
+level `sign_authority()` function is for trusted integrations and must not be
+exposed as an unguarded signing API.
 
 ## Trust model
 
