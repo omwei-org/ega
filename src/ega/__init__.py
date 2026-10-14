@@ -16,6 +16,7 @@ from .aee import AEECondition, ConditionEvaluation, evaluate_aee_condition
 from .authority import AuthorizationError, issue_authority
 from .signed_authority import (
     AuthorityEnvelopeError,
+    issue_signed_authority,
     sign_authority,
     verify_signed_authority,
 )
@@ -48,6 +49,7 @@ __all__ = [
     "execution_attestation",
     "final_authority_check",
     "issue_authority",
+    "issue_signed_authority",
     "sign_authority",
     "verify_signed_authority",
     "observation_to_evidence",
