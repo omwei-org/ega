@@ -33,19 +33,21 @@ make an incorrectly operated issuer trustworthy.
 
 The verifier also requires a trusted clock, a revocation provider, and
 authenticated resolvers for the canonical `DecisionRecord`, `RuntimeIntent`,
-and `AuthorizationScope`. The decision record must carry the exact intent and
-scope references and their canonical SHA-256 digests. The verifier resolves each
-object independently, checks references and recomputed digests, and re-runs EGA's
-scope evaluator against the resolved intent and scope before returning authority.
-AEE conditions must reference evidence items actually present in the decision
-record; duplicate evidence references are rejected. Missing objects, lookup
-errors, reference mismatch, digest mismatch, or out-of-scope parameters fail
-closed.
+`AuthorizationScope`, and each referenced `EvidenceItem`. The decision record
+must carry the exact intent and scope references and their canonical SHA-256
+digests. The verifier resolves each object independently, checks references and
+recomputed digests, re-runs EGA's scope evaluator against the resolved intent
+and scope, and compares each embedded evidence item with its canonical resolved
+counterpart before returning authority. AEE conditions must reference evidence
+items actually present in the decision record; duplicate evidence references
+are rejected. Missing objects, lookup errors, reference mismatch, digest mismatch,
+evidence substitution, or out-of-scope parameters fail closed.
 
-This proves that resolved object contents match their signed lineage digests and
-that the runtime intent passes the resolved scope constraints. It does not
-independently prove that evidence referenced by the record is true, that the
-decision policy was correct, or that the resolvers' stores are authoritative.
+This proves that resolved object contents match their signed lineage digests,
+that evidence records match their canonical resolved entries, and that the
+runtime intent passes the resolved scope constraints. It does not independently
+prove that upstream sensor claims are true, that the decision policy was correct,
+or that the resolvers' stores are authoritative.
 Those remain upstream provenance and deployment responsibilities.
 
 Revocation provider failures, stale/unavailable data as reported by the provider,
