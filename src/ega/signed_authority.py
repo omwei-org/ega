@@ -187,3 +187,51 @@ def verify_signed_authority(
         raise AuthorityEnvelopeError("authority digest mismatch")
     normalized = _authority_mapping(authority)
     return normalized
+
+
+def issue_signed_authority(
+    intent: Any,
+    scope: Any,
+    *,
+    decision_record: Any,
+    private_key: Ed25519PrivateKey,
+    issuer: str,
+    key_id: str,
+    issued_at: int,
+    not_before: int,
+    expires_at: int,
+    jti: str,
+    authority_id: str = "ega-authority-001",
+) -> bytes:
+    """Evaluate scope and bind a decision record before signing the authority.
+
+    This is the preferred issuer entry point: it calls EGA's own
+    `issue_authority` function rather than signing an arbitrary caller-created
+    authority object. The decision record and authorization scope must still
+    originate from trusted upstream/provisioning services.
+    """
+    from .authority import issue_authority
+    from .models import DecisionRecord, RuntimeIntent, AuthorizationScope
+
+    if not isinstance(intent, RuntimeIntent):
+        raise AuthorityEnvelopeError("intent must be an EGA RuntimeIntent")
+    if not isinstance(scope, AuthorizationScope):
+        raise AuthorityEnvelopeError("scope must be an EGA AuthorizationScope")
+    if not isinstance(decision_record, DecisionRecord):
+        raise AuthorityEnvelopeError("a concrete EGA DecisionRecord is required")
+    authority = issue_authority(
+        intent,
+        scope,
+        authority_id=authority_id,
+        decision_record=decision_record,
+    )
+    return sign_authority(
+        authority,
+        private_key=private_key,
+        issuer=issuer,
+        key_id=key_id,
+        issued_at=issued_at,
+        not_before=not_before,
+        expires_at=expires_at,
+        jti=jti,
+    )
