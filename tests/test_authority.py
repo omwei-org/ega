@@ -108,3 +108,10 @@ def test_unbounded_or_non_finite_runtime_parameters_fail_closed(parameters):
     intent = make_intent(parameters=parameters)
     with pytest.raises(AuthorizationError, match="outside authorization scope"):
         issue_authority(intent, make_scope())
+
+
+def test_boolean_does_not_match_numeric_equality_constraint():
+    intent = make_intent(parameters={"value": True})
+    scope = make_scope(parameter_constraints={"value": {"equals": 1}})
+    with pytest.raises(AuthorizationError, match="outside authorization scope"):
+        issue_authority(intent, scope)
