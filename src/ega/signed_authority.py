@@ -261,6 +261,11 @@ def verify_signed_authority(
         or intent.parameters != normalized["parameters"]
     ):
         raise AuthorityEnvelopeError("authority does not match resolved runtime intent")
+    evidence_refs = {item.evidence_ref for item in record.evidence_items}
+    if len(evidence_refs) != len(record.evidence_items):
+        raise AuthorityEnvelopeError("decision record contains duplicate evidence references")
+    if any(condition.evidence_ref not in evidence_refs for condition in record.aee_conditions):
+        raise AuthorityEnvelopeError("AEE condition references evidence absent from decision record")
     try:
         # Re-run the policy evaluator against the resolved, digest-verified
         # intent and scope. Identity equality alone is not parameter authorization.
@@ -280,11 +285,6 @@ def verify_signed_authority(
     ):
         raise AuthorityEnvelopeError("authority does not match evaluated runtime intent")
 
-    evidence_refs = {item.evidence_ref for item in record.evidence_items}
-    if len(evidence_refs) != len(record.evidence_items):
-        raise AuthorityEnvelopeError("decision record contains duplicate evidence references")
-    if any(condition.evidence_ref not in evidence_refs for condition in record.aee_conditions):
-        raise AuthorityEnvelopeError("AEE condition references evidence absent from decision record")
     for item in record.evidence_items:
         try:
             resolved_item = evidence_resolver(item.evidence_ref)
