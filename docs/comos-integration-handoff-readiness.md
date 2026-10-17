@@ -31,6 +31,16 @@ Therefore, the existing EGA intent schema cannot directly represent the full pub
 
 This is a checklist. It does not claim all fields are forwarded to the node today.
 
+## Node key selection and trust boundary (confirmed by Ron)
+
+The node reads the optional `COMOS_HUB_ACT_PUBLIC_KEY` setting as an Ed25519 SPKI public key encoded in base64. If configured, it replaces the public key pinned in the release; otherwise the release-pinned key is used. The test script creates an ephemeral Ed25519 key pair and sets this variable only in its own process before the node code loads; it does not write `.env` and writes only the JSON report. This is therefore an operator-supported key-selection setting, not a test-only code path. Its use requires the same node-configuration access as changing the gate URL or replacing the binary. At startup, the node logs the active key ID (`kid`) and whether the key came from the release pin or the setting. A malformed or non-Ed25519 key stops the ACT loop rather than permitting unverified processing.
+
+This does not remove the operator from the node trust boundary. The node's public README states that its local database has no password and that the operator is the trust boundary. Preserve that fact in the audit record; do not imply protection against an operator or compromised node runtime that can change configuration or bypass the gate.
+
+## Protected effect and settlement boundary (confirmed by Ron)
+
+For the node-side gate, the protected effect is **sale reservation and order creation**: the node creates the order and reserves stock. The node does not move Coms, and `paid` is not a second financial effect on the node. Financial settlement occurs at the hub only after the node receipt matches the bound sale. The hub then queues `payment_confirm`; that ACT requires the hub's settlement reference and transitions only a pending order, recording a settlement that has already occurred. Accordingly, the financial guarantee belongs to the hub's settlement checks, while the node's paid status records that outcome. Do not describe the node gate as directly protecting the transfer of Coms.
+
 ## Canonical node action digest (v1)
 
 The TypeScript integration now exports canonicalActionDigest(act, nodePricing). The canonical projection is:
